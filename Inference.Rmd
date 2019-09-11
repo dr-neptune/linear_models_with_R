@@ -1,0 +1,473 @@
+# Inference 
+
+ ```{r}
+library(faraway)
+library(tidyverse)
+library(magrittr)
+```
+
+## Test All of the Predictors 
+
+```{r}
+data(gala, package = "faraway")
+
+# fit linear model
+(lmod <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent, gala))
+
+# create model for null hypothesis
+(nullmod <- lm(Species ~ 1, gala))
+
+# or equivalently 
+gala$Species %>% mean()
+
+# get the result of the test of all predictors
+anova(nullmod, lmod)
+```
+
+We can see directly the result of the test of whether any predictors have significance in the model - that is, whether beta_1 = ... = beta_n = 0. Since our p-value for the F statistic is so small, we reject the null hypothesis. 
+
+We can also do this directly using the F-testing formula:
+
+```{r}
+# get RSS null model
+(rss0 <- deviance(nullmod))
+
+# get RSS linear model 
+(rss <- deviance(lmod))
+
+# get degrees of freedom null model
+(df0 <- df.residual(nullmod))
+
+# get degrees of freedom linear model
+(df <- df.residual(lmod))
+
+# calculate f statistic
+(f_stat <- ((rss0 - rss) / (df0 - df)) / (rss / df))
+
+# get F statistic p-value
+1 - pf(f_stat, df0 - df, df)
+```
+
+## Test One of the Predictors 
+
+Can one particular predictor be dropped from the model? The null hypothesis is that $H_0$ : $beta_i = 0$. Let $\Omega$ be the model with all the predictors of interest which has p parameters and let $\omega$ be the model with all the same predictors except the predictor i. 
+
+```{r}
+# test whether area can be dropped from the full model
+(lmods <- lm(Species ~ Elevation + Nearest + Scruz + Adjacent, gala))
+
+anova(lmods, lmod)
+```
+
+The p-value of 0.3 indicates that we fail to reject the null hypothesis. 
+
+An alternative approach is to use the t-statistic for testing the hypothesis
+
+$t_i = \hat{\beta}_i / \mathrm{se}(\hat{\beta}_i)$
+
+and check for significance using a t-distribution with $n - p$ degrees of freedom. It can be shown that $t_i^2$ is equal to the appropriate F statistic using the method shown above. 
+
+```{r}
+(summary(lmod) %>% broom::tidy() -> tbl_lmod_summary)
+```
+
+## Testing a Pair of Predictors 
+
+Let our null hypothesis be that the area and adjacent area has no effect on the number of species on the island, or beta_area = beta_adjacent = 0 where we also specify that the other 3 predictors are in the model. 
+
+```{r}
+# test this hypothesis by fitting a model without these two terms and constructing an F-test
+lmods <- lm(Species ~ Elevation + Nearest + Scruz, gala)
+
+anova(lmods, lmod)
+```
+
+The null hypothesis was rejected because the p-value is small. This means that the area and adjacent area variables are important to the model. 
+
+We may wonder whether we could have divined this information from looking at the initial summary output p-values
+
+```{r}
+lmod %>% summary() %>% broom::tidy()
+```
+
+Where our p-values are ~ 0.3 and ~ 0.0003 for area and adjacent respectively. The problem is that we have two p-values and no simple way to combine them. Furthermore, each of these p-values corresponds to a test where the other predictor is included in the model. In short, if we wish to see the effect of two or more predictors on a model, we must use an F-test. We can not reliably use the (in this case) two t-tests.
+
+## Testing a Subspace
+
+Some tests can not be expressed simply in terms of the inclusion or exclusion of subsets of predictors. 
+
+Consider an example were the areas of the current and adjacent islands are added together and used in place of two separate predictors. We can express this as the null hypothesis being that H0 : beta_area = beta_adjacent 
+
+This null hypothesis model represents a linear subspace of the full model. We can test this by specifying the null model and applying the F-test procedure
+
+```{r}
+lmods <- lm(Species ~ I(Area + Adjacent) + Elevation + Nearest + Scruz, gala)
+
+anova(lmods, lmod)
+```
+
+The function I() ensures that the argument is evaluated rather than interpreted as part of the formula. Our p-value of 0.028 indicates that the null can be rejected here and the proposed simplification to a single combined area predictor is not justifiable. 
+
+Another example occurs when we want to test whether a parameter can be set to a particular value, for example H0: beta_elevation = 0.5. This specifies a particular subspace of the full model. We can set a fixed term in the regression equation using an offset.
+
+```{r}
+lmods <- lm(Species ~ Area + offset(0.5 * Elevation) + Nearest + Scruz + Adjacent, gala)
+
+anova(lmods, lmod)
+```
+
+Another way to test such point hypotheses is with a t-statistic: 
+
+$t = (\hat{\beta} - c) / se(\hat{\beta})$
+
+where $c$ is the point hypothesis. 
+
+```{r}
+lmod %>% summary() %>% broom::tidy() %>% .[3,] -> elev
+
+# statistic for elevation and corresponding std.error
+(tstat <- (elev$estimate - 0.5) / elev$std.error)
+
+2 * pt(tstat, df = 24)
+```
+
+We see that the p-value is the same as before. 
+
+If we square the t statistic 
+
+```{r}
+tstat^2
+```
+
+we get the same F-value as above. 
+
+
+## Tests We Cannot Do 
+
+We can not do a nonlinear hypothesis test like H0: beta_j * beta_k = 1 using the F-testing method. 
+
+We would need to fit a nonlinear model. 
+
+We can also not compare models that are not nested using F-tests. For example, we couldnt do Area and Evelation against Area, Adjacent, and Scruz. 
+
+A further difficulty arises when we compare using different datasets. This arises when some of the variables are missing as different models may use different cases depending on which are complete. 
+
+# Permutation Tests
+
+If we don't have normally distributed errors and we don't have many samples, we can use permutation tests as an alternative that needs neither of these assumptions.
+
+Suppose in the Galapagos dataset that if the number of species has no relation to the five geographic variables, then the observed response values would be randomly distributed between the islands without relation to the predictors. The F-statistic is a good measure of the association between predictors and the responses with larger values indicate stronger associations. 
+
+We can then ask, what is the chance that under this assumption that an F-statistic would be observed as large or larger than the one we actually observed? We could compute this exactly by computing the F-statistic for all possible n! permutations of the response variable and see what proportion exceeds the observed F-statistic. 
+
+
+```{r}
+# make a model with nearest and scruz to get a p-value for the F-statistic that is not too small
+lmod <- lm(Species ~ Nearest + Scruz, gala)
+(lms <- lmod %>% summary())
+
+# extract the F-statistic for later computation
+lmsf <- lms$fstatistic
+
+1 - pf(lmsf[1], lmsf[2], lmsf[3])
+
+# use sample to compute the F-statistic for 4000 randomly selected permutations and see what proportion extends the F-statistic for the original data
+nreps <- 4000
+set.seed(8888) 
+
+fstats <- map_dbl(1:nreps, ~ lm(sample(Species) ~ Nearest + Scruz, gala) %>%
+                 summary() %$% fstatistic %>% .[1])
+
+mean(fstats > lmsf[[1]])
+```
+
+Our normal theory based value for the F-statistic is 0.55, and the estimated p-value using the permutation test is 0.55 as well. In this case, the results are very similar and not close to any decision boundary - but if there was some crucial difference in the conclusion and there was some evidence of non-normal errors, we would prefer the permutation based test. 
+
+We can also do permutation tests with one predictor. In this case, we permute the predictor rather than the response. 
+
+```{r}
+# test the Scruz predictor in the model
+(scruz_out <- summary(lmod) %>% broom::tidy() %>% slice(3))
+scruz_t <- scruz_out %>% .[[4]]
+
+# perform 4000 permutations of scruz and check what fraction of the t-statistics exceed -1.09 is absolute value
+
+tstats <- map_dbl(1:nreps, ~ lm(Species ~ Nearest + sample(Scruz), gala) %>%
+                  summary() %>% broom::tidy() %>% slice(3) %>% .[[4]])
+
+mean(abs(tstats) > abs(scruz_t))
+scruz_out %>% .[[5]]
+```
+
+The output is ~ .26, which is very close to the output from the observed normal based p-value of 0.28. 
+
+The idea of permutation tests works well in conjunction with the principle of random allocation of units in designed experiments. When the values of X really have been randomly assigned to the experimental units which then produce response Y, it is easy to justify a permutation based testing procedure to check whether there truly is any relation between X and Y. 
+
+# Sampling
+
+The method of data collection affects the conclusions we can draw. 
+
+For designed experiments, we view nature as the computer generating the observed responses and our inference then tells us something about the beta underlying the natural process.
+
+For observational studies, we envisage a finite population from which we draw a sample. We want to say something about the unknown population value of beta using estimated values beta_hat obtained from the sample data. The sample data should be a simple random sample of the population. 
+
+We can also try to select a representative sample by hand, but the logic behind statistical inference relies on the sample being random. 
+
+Sometimes the sample is the complete population. Permutation tests make it possible to give some meaning to the p-value when the sample if the population or for samples of convenience although one must be clear that the conclusion applies only to the particular sample. 
+
+# Confidence Intervals for Beta 
+
+Confidence intervals provide an alternative way to expressing the uncertainty in the estimates of beta. They take the form 
+
+$\hat{\beta}_i = t^{\alpha / 2}_{n - p} \mathrm{se}(\hat{\beta})$
+
+```{r}
+lmod <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent, gala)
+
+lmod %>% summary()
+
+lmod %>% broom::glance()
+lmod %>% broom::augment()
+
+# we can construct 95% CIs for Beta_area for which we need the 2.5% and 97.5% quantiles of the t-distribution with 30 - 6 DOF
+lmod_tidy <- lmod %>% broom::tidy()
+
+lmod_tidy %>% pluck(2, 2) + c(-1, 1) * qt(0.975, 30 - 6) * (lmod_tidy %>% pluck(3, 2))
+```
+
+CIs have a duality with two sided hypothesis tests. If the interval contains zero, this indicates that the null hypothesis H0: beta_area = 0 would not be rejected at the 5% level. 
+
+```{r}
+# CI for Beta_adjacent
+-0.074805 + c(-1, 1) * qt(0.975, 30 - 6) * 0.017700
+```
+
+Since 0 is not in this interval, the null is rejected. This CI is relatively wide in the sense that the upper limit is about 3 times larger than the lower limit. This means we are not really confident about what the exact area of the adjacent island on the number of species really is, even though the statistical significance means we are confident it is negative. 
+
+```{r}
+# a convenient way to obtain all the univariate intervals
+confint(lmod)
+```
+
+CIs give us plausible ranges for the parameters. The selection of particular confidence level such as 0.05 can be misleading because there is a temptation to view small p-values as indicating an important (rather than just statistically significant) effect. Confidence intervals are better in this respect because they tell us about the size of the effect. 
+
+If we are interested in more than one parameter, we can construct a 100(1 - \alpha)% confidence region for beta using 
+
+$(\hat{\beta} - \beta)^T X^T X(\hat{\beta} - \beta) \leq p \hat{\sigma}^2 F^{(\alpha)}_{p, n-p}$
+
+These regions are elippsoidally shaped. 
+
+```{r}
+# draw a 95% confint for beta_area and beta_adjacent
+require(ellipse)
+
+plot(ellipse(lmod, c(2, 6)), type = "l", ylim = c(-0.13, 0))
+points(coef(lmod)[2], coef(lmod)[6], pch = 19)
+# add univariate confidence intervals for both dims
+abline(c = confint(lmod)[2,], lty = 2)
+abline(c = confint(lmod)[6,], lty = 2)
+```
+
+From this plot: 
+
+- The joint hypothesis that beta_area = beta_adjacent = 0 is rejected becuase the origin does not lie within the ellipse. 
+
+- The hypothesis beta_area = 0 is not rejected because the zero does lie within the ellipse 
+
+- The hypothesis beta_adjacent = 0 is rejected because the zero does not lie within the ellipse
+
+If we wish to teset multiple parameters, we need to use a joint testing procedure and not try to combine several univariate tests. 
+
+# Bootstrap Confidence Intervals 
+
+The F-based and t-base confidence regions and intervals depend on the assumption of normality. The bootstrap method provides a way to construct confidence statements without this assumption. 
+
+We can do this with **simulation**:
+
+1. Generate epsilon from the known error distribution 
+2. Form y = x * beta + epsilon from the known epsilon and fixed X
+3. Compute beta_hat 
+
+We repeat these steps many times. We can estimate the sampling distribution of beta_hat using the empirical distribution of the generated beta_hat which we can estimate as accurately as we please by simply running the simulation long enough. 
+
+The **bootstrap** emulates the simulation procedure above except that instead of sampling from the true model, it samples from the observed data. It mirrors the simulation method, but uses quantites we do know (i.e. we know our data, but we don't know the actual error distribution). 
+
+1. Generate $\epsilon^*$ by sampling with replacement from $\hat{\epsilon_1}, ..., \hat{\epsilon_n}$ 
+2. Form $y^* = X \hat{\beta} + \epsilon^*$ 
+3. Compute $\hat{\beta}^*$ from $X, y^*$
+
+```{r}
+# set seed for reproducibility
+set.seed(8888)
+
+# number of replications
+num_reps <- 4000
+
+# store results
+coefmat <- matrix(NA, num_reps, 6)
+
+# grab residuals of the model
+resids <- residuals(lmod)
+
+# grab predictions of the model
+preds <- fitted(lmod)
+
+# generate simulations
+for (i in 1:num_reps) {
+    # repeatedly generate bootstrap responses
+    booty <- preds + sample(resids, rep = TRUE)
+    # update and refit the model call
+    bmod <- update(lmod, booty ~ .)
+    # save result
+    coefmat[i,] <- coef(bmod)
+}
+
+# set column names
+colnames(coefmat) <- c("Intercept", colnames(gala[,3:7]))
+
+# coerce to dataframe
+coefmat %<>% data.frame()
+
+map_dfc(coefmat, ~ quantile(.x, c(0.025, 0.975)))
+
+# plot
+coefmat %>% ggplot(aes(x = Area)) +
+    geom_density() +
+    geom_vline(xintercept = c(-0.0625, 0.0185), lty = 2)
+
+coefmat %>% ggplot(aes(x = Adjacent)) +
+    geom_density() +
+    geom_vline(xintercept = c(-0.104, 0.0416), lty = 2)
+```
+
+# Exercises 
+
+1. 
+
+```{r}
+data(prostate, package = "faraway")
+
+prostate %>% head()
+
+(lmod <- lm(lpsa ~ ., prostate))
+
+lmod %>% summary(digits = )
+
+# compute 90 and 95% conf ints for the age parameter
+lmod %>% confint(level = 0.9) %>% tibble() %>% slice(4)
+lmod %>% confint(level = 0.95) %>% tibble() %>% slice(4)
+```
+
+Using just these confidence intervals we see that when we take the 90% confidence interval, our interval does not contain 0 and therefore likely rejects the null hypothesis.
+
+Checking the 95% confidence interval, we see that it does contain 0 and therefore we fail to reject the null hypothesis that beta_age = 0.
+
+```{r}
+
+```
+
+From this plot: 
+
+- The joint hypothesis that beta_area = beta_adjacent = 0 is rejected becuase the origin does not lie within the ellipse. 
+
+- The hypothesis beta_area = 0 is not rejected because the zero does lie within the ellipse 
+
+- The hypothesis beta_adjacent = 0 is rejected because the zero does not lie within the ellipse
+
+If we wish to teset multiple parameters, we need to use a joint testing procedure and not try to combine several univariate tests. 
+
+# Bootstrap Confidence Intervals 
+
+The F-based and t-base confidence regions and intervals depend on the assumption of normality. The bootstrap method provides a way to construct confidence statements without this assumption. 
+
+We can do this with **simulation**:
+
+1. Generate epsilon from the known error distribution 
+2. Form y = x * beta + epsilon from the known epsilon and fixed X
+3. Compute beta_hat 
+
+We repeat these steps many times. We can estimate the sampling distribution of beta_hat using the empirical distribution of the generated beta_hat which we can estimate as accurately as we please by simply running the simulation long enough. 
+
+The **bootstrap** emulates the simulation procedure above except that instead of sampling from the true model, it samples from the observed data. It mirrors the simulation method, but uses quantites we do know (i.e. we know our data, but we don't know the actual error distribution). 
+
+1. Generate $\epsilon^*$ by sampling with replacement from $\hat{\epsilon_1}, ..., \hat{\epsilon_n}$ 
+2. Form $y^* = X \hat{\beta} + \epsilon^*$ 
+3. Compute $\hat{\beta}^*$ from $X, y^*$
+
+```{r}
+# set seed for reproducibility
+set.seed(8888)
+
+# number of replications
+num_reps <- 4000
+
+# store results
+coefmat <- matrix(NA, num_reps, 6)
+
+# grab residuals of the model
+resids <- residuals(lmod)
+
+# grab predictions of the model
+preds <- fitted(lmod)
+
+# generate simulations
+for (i in 1:num_reps) {
+    # repeatedly generate bootstrap responses
+    booty <- preds + sample(resids, rep = TRUE)
+    # update and refit the model call
+    bmod <- update(lmod, booty ~ .)
+    # save result
+    coefmat[i,] <- coef(bmod)
+}
+
+# set column names
+colnames(coefmat) <- c("Intercept", colnames(gala[,3:7]))
+
+# coerce to dataframe
+coefmat %<>% data.frame()
+
+map_dfc(coefmat, ~ quantile(.x, c(0.025, 0.975)))
+
+# plot
+coefmat %>% ggplot(aes(x = Area)) +
+    geom_density() +
+    geom_vline(xintercept = c(-0.0625, 0.0185), lty = 2)
+
+coefmat %>% ggplot(aes(x = Adjacent)) +
+    geom_density() +
+    geom_vline(xintercept = c(-0.104, 0.0416), lty = 2)
+```
+
+# Exercises 
+
+1. 
+
+```{r}
+data(prostate, package = "faraway")
+
+prostate %>% head()
+
+(lmod <- lm(lpsa ~ ., prostate))
+
+lmod %>% summary()
+
+# compute 90 and 95% conf ints for the age parameter
+lmod %>% confint(level = 0.9) %>% tibble() %>% slice(4)
+lmod %>% confint(level = 0.95) %>% tibble() %>% slice(4)
+```
+
+Using just these confidence intervals we see that when we take the 90% confidence interval, our interval does not contain 0 and therefore likely rejects the null hypothesis.
+
+Checking the 95% confidence interval, we see that it does contain 0 and therefore we fail to reject the null hypothesis that beta_age = 0.
+
+```{r}
+plot(ellipse(lmod, c(4, 5)), type = "l")
+points(coef(lmod)[4], coef(lmod)[5], pch = 19)
+# add univariate confidence intervals for both dims
+abline(v = confint(lmod)[4,], lty = 2)
+abline(h = confint(lmod)[5,], lty = 2)
+```
+
+The outcome of the origin on the the display tells us the outcome of the hypothesis test that beta_age = beta_lbph = 0. Since the origin lies within the ellipse and our 95% confidence intervals, we fail to reject the joint hypothesis. 
+
+

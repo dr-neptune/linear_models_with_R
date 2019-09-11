@@ -1,0 +1,557 @@
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+install.packages("faraway", dependencies=T)
+```
+
+```{r}
+# read in data
+data(gala, package = "faraway")
+
+gala %>% head()
+```
+
+Where:
+
+- Species is the number of species on the island 
+- Area is the area of the island in km^2 
+- Elevation is the highest elevation on the island in meters 
+- Nearest is the distance to the nearest island 
+- Scruz is the distance to Santa Cruz island 
+- Adjacent is the area of the adjacent island 
+- Endemic is the number of endemic species 
+
+```{r}
+# fit linear model
+lmod <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent, data = gala)
+
+lmod %>% summary()
+
+lmod %>% faraway::sumary()
+```
+
+We can identify several useful quantities in this output. One useful feature of R is that we can calculate quantities of intereset directly, which is useful when the statistic we want is not a part of the prepackaged functions 
+
+```{r}
+# extract the X matrix
+(x_mat <- model.matrix(~ Area + Elevation + Nearest + Scruz + Adjacent, gala))
+
+# grab response variable
+y <- gala$Species
+
+# construct (x^Tx)^(-1)
+xtxi <- solve(t(x_mat) %*% x_mat)
+
+# get beta_hat directly
+xtxi %*% t(x_mat) %*% y
+
+# this is a better way to compute beta_hat
+solve(crossprod(x_mat, x_mat), crossprod(x_mat, y))
+```
+
+In general, we should use the carefully crafted code like lm() which uses QR decomposition. 
+
+We can extract the regression quantities we need from the model object itself. Commonly used are residuals, fitted, df.residual (which gives the degrees of freedom), deviance (which gives the RSS) and coef which gives the beta_hat values. 
+
+```{r}
+names(lmod)
+
+lmodsum <- summary(lmod)
+names(lmodsum)
+
+# we can estimate sigma either by the formula or extract it from the summary object
+sqrt(deviance(lmod) / df.residual(lmod))
+lmodsum$sigma
+
+# we can extract (x^Tx)^-1 and use it to compute the standard errors for the coefficients
+xtxi <- lmodsum$cov.unscaled
+sqrt(diag(xtxi)) * lmodsum$sigma
+
+# or get them from the summary object
+coef(lmodsum)[,2]
+```
+
+## 2.7 | QR Decomposition
+
+```{r}
+# compute the QR decomp for the Galapogos data
+qrx <- qr(x_mat)
+
+# the components of the decomp must be extracted by other functions. extract the Q matrix
+dim(qr.Q(qrx))
+
+# we only need the first p columns, this returns Q_f
+(f <- t(qr.Q(qrx)) %*% y)
+
+# solving Rbeta = f is easy due to the triangular form of R
+backsolve(qr.R(qrx), f)
+```
+
+## 2.8 | Gauss-Markov Theorem 
+
+$\hat{\beta}$ is a plausible estimator, but there are alternatives. There are 3 good reasons to use least squares:
+
+1. It results from an orthogonal projection onto the model space. It makes sense geometrically. 
+2. If the errors are iid, it is the maximum likelihood estimator. 
+3. The Gauss-Markov theorem states that $\hat{\beta}$ is the best linear unbiased estimator.
+
+A linear combination of the parameters $\Psi = c^T \beta$ is estimable iff there exists a linear combination $a^Ty$ s.t. $Ea^Ty = c^T\beta \forall \beta$. 
+
+The Gauss-Markov theorem shows that the least squares estimate $\hat{\beta}$ is a good choice, but it does require that the errors are uncorrelated and have equal variance. Even if the errors behave, but are non-normal, then nonlinear or biased estimates may work better. 
+
+Situations were estimators other than OLS should be considered are: 
+
+1. When the errors are correlated or have unequal variance, generalized least squares should be used. 
+2. When the error distribution is long tailed, then robust estimates might be used. Robust estimates are typically not linear in y. 
+3. When the predictors are highly correlated (collinear), then biased estimators such as ridged regression might be preferable. 
+
+## 2.9 | Goodness of Fit 
+
+$R^2$ is the coefficient of determination, or percentage of variance explained. 
+
+$R^2 = 1 - \frac{\sum(\hat{y_i} - \bar{y})^2}{\sum(y_i - \bar{y})^2}$
+
+or $R^2 = \mathrm{cor}^2(\hat{y}, y)$
+
+## 2.10 | Identifiability 
+
+The least squares estimate is the solution to the normal equations: $X^TX\hat{\beta} = X^Ty$ where $X$ is an n x p matrix. If $X^TX$ is singular (i.e. its determinant is 0) and cannot be inverted, then there will be infinitely many solutions to the normal equations and $\hat{\beta}$ is at least partially unidentifiable. 
+
+Unidentifiability will occur when $X$ is not of full rank - when its columns are linearly dependent. This happens in a few cases: 
+
+1. One variable is a multiple of another 
+2. We have more variables than cases, n > p. 
+
+By default, R fits the largest identifiable model by removing variables in the reverse order of appearance in the model formula.
+
+Here is an example. 
+
+Suppose we create a new variable in the Galapagos dataset.
+
+```{r}
+gala$Adiff <- gala$Area - gala$Adjacent
+```
+
+Then add it to the model
+
+```{r}
+lmod <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent + Adiff, gala)
+lmod %>% summary()
+```
+
+We get the message "Coefficients: (1 not defined because of singularities)". Generally, we can figure out where the problem lies. If we need to know quantitatively, we can perform an eigendecomposition of $X^TX$. 
+
+More problematic than cases of unidentifiability, are cases where we are close to identifiability. 
+
+Suppose we add a small random difference to Adiff:
+
+```{r}
+set.seed(8888)
+
+Adiffe <- gala$Adiff + 0.001 * (runif(30) - 0.5)
+
+# refit the model
+lmod <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent + Adiffe, gala)
+lmod %>% summary()
+```
+
+Now all the parameters are estimated, but the standard errors are very large because we can not estimate them in a stable way. 
+
+## 2.11 | Orthogonality 
+
+Orthogonality is a useful property because it allows us to more easily interpret the effect of one predictor without regard to another. Orthogonality is a desirable property, but will only occur when X is chosen by the experimenter. It is a feature of good design. In observational data, we do not have direct control over X and this is a source of manu interpretational difficulties associated with nonexperimental data. 
+
+Here is an example of an experiment to determine the effects of column temperature, gas/liquid ratio, and packing height in reducing the unpleasant odor of a chemical product that was sold for household use. 
+
+```{r}
+data(odor, package = "faraway")
+odor %>% head()
+```
+
+The three predictors have been transformed from their original scale of measurement. This data was presented to give an example of a central composite design.
+
+```{r}
+# compute the covariance of the predictors
+cov(odor[,-1])
+```
+
+The matrix is diagonal. 
+
+```{r}
+# fit a model
+lmod <- lm(odor ~ temp + gas + pack, odor)
+lmod %>% summary(cor = T)
+```
+
+Notice that the correlations are zero and the stand error for the coefficients are equal due to the balanced design. 
+
+```{r}
+# drop one of the variables
+lmod <- lm(odor ~ gas + pack, odor)
+lmod %>% summary(cor = T)
+```
+
+The coefficients don't change, but the standard errors change slightly causing slight perturbences in the other values (t, p, etc)
+
+## Exercises 
+
+1. 
+
+```{r}
+data(teengamb, package = "faraway")
+teengamb %>% head()
+
+# fit a model
+lmod <- lm(gamble ~ sex + status + income + verbal, teengamb)
+lmod %>% summary()
+
+# what percentage of the variation in response is due to these predictors?
+# 52.67%
+
+# which observation has the largest positive residual?
+cooks.distance(lmod) %>% plot(pch = 23, bg = 'purple', cex = 2, ylab = "Cook's Distance")
+teengamb[which(cooks.distance(lmod) > 0.5),]
+
+# compute the mean and median of the residuals
+residuals(lmod) %>% mean()
+residuals(lmod) %>% median()
+
+# compute the correlation of the residuals with the fitted values
+fitted(lmod) %>% cor(residuals(lmod))
+plot(fitted(lmod) ~ residuals(lmod))
+
+# compute the correlation of the residuals with the income
+residuals(lmod) %>% cor(teengamb$income)
+plot(residuals(lmod), teengamb$income)
+
+# for all other predictors held constant, what would be the difference in predicted expenditure on gambling for a male compared to a female?
+lmod
+lm(gamble ~ sex, teengamb)
+# on average, a female would spend ~26% less on their income on gambling 
+```
+
+2. 
+
+```{r}
+data(uswages, package = "faraway")
+uswages %>% head()
+
+lm(wage ~ educ + exper, uswages) %>% summary()
+lm(log10(wage) ~ educ + exper, uswages) %>% summary()
+
+# for every year of education, the employee receives ~ $52 / week, but the baseline is negative which is a bit disconcerting 
+# with log10, the baseline is about $100, but each year of education increases the exponent by 0.03, or equivalently it multiplies our base by 10^(0.03) or multiplies it by 7%. We could roughly say each year of experience increases the wages by 7% compounded.
+```
+
+3. 
+
+```{r}
+x <- 1:20
+y <- x + rnorm(20)
+plot(x ~ y)
+
+# fit by lm 
+lm(y ~ x + I(x^2)) %>% summary()
+
+# fit by hand
+
+# get xTxi
+xtxi <- solve(t(x) %*% x)
+
+# get beta coef
+xtxi %*% t(x) %*% y
+
+# or 
+solve(crossprod(x, x), crossprod(x, y))
+
+# at what degree of polynomial does the direct calculation fail?
+# direct calculation fails when we have a high enough dimension that X^TX is not in a simple form. X^TX is not in a simple form if it is singular and cannot be inverted. 
+```
+
+4. 
+
+```{r}
+data(prostate, package = "faraway")
+prostate %>% head()
+
+# fit first model
+lmod_1 <- lm(lpsa ~ lcavol, prostate)
+lmod_1 %>% summary()
+
+
+get_res_std_err <- function(lm) {
+    lm %>% summary() %>% pluck(6)
+}
+
+get_r_sq <- function(lm) {
+    lm %>% summary() %>% pluck(8)
+}
+
+lmod_1 %>% get_res_std_err()
+lmod_1 %>% get_r_sq()
+
+# get variable names 
+var_names <- names(prostate)[2:9]
+
+# fit a linear model to each unique subset of the variables 
+lmods <- map(1:8, ~ lm(data = prostate,
+                       as.formula(paste0("lcavol ~ ",
+                                         paste(var_names[1:.x],
+                                               collapse = "+")))))
+
+# get all the r squared and res std error values
+res_std_v <- lmods %>% map(., ~ get_res_std_err(.x)) %>% flatten_dbl() %>% tibble() %>% set_names("res_std_err")
+
+r_sq_v <- lmods %>% map(., ~ get_r_sq(.x)) %>% flatten_dbl() %>% tibble() %>% set_names("r_sq")
+
+r_sq_v %>% 
+    ggplot(aes(x = 1:8, y = r_sq)) +
+    geom_point() +
+    geom_smooth(se = FALSE) +
+    xlab("Number of Variables in Formula") +
+    ylab("R Squared") -> p1
+
+res_std_v %>% 
+    ggplot(aes(x = 1:8, y = res_std_err)) +
+    geom_point() +
+    geom_smooth(se = FALSE) +
+    xlab("Number of Variables in Formula") +
+    ylab("Residual Standard Error") -> p2 
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+```
+
+5. 
+
+```{r}
+plot(lpsa ~ lcavol, data = prostate)
+
+lmod_1 <- lm(lpsa ~ lcavol, prostate)
+lmod_2 <- lm(lcavol ~ lpsa, prostate)
+
+lmod_1$coefficients
+lmod_2$coefficients
+
+# plot lmod_1, lpsa ~ lcavol
+prostate %>%
+    ggplot(aes(x = lcavol, y = lpsa)) +
+    geom_point() +
+    geom_abline(intercept = lmod_1$coefficients[[1]],
+                slope = lmod_1$coefficients[[2]],
+                color = "blue")
+
+# plot lmod_2, lcavol ~ lpsa 
+prostate %>%
+    ggplot(aes(x = lpsa, y = lcavol)) +
+    geom_point() +
+    geom_abline(intercept = lmod_2$coefficients[[1]],
+                slope = lmod_2$coefficients[[2]],
+                color = "green")
+
+# plot them together
+prostate %>%
+    ggplot(aes(x = lcavol, y = lpsa)) +
+    geom_point() +
+    geom_abline(intercept = lmod_1$coefficients[[1]],
+                slope = lmod_1$coefficients[[2]],
+                color = "blue") +
+    geom_abline(intercept = - lmod_2$coefficients[[1]] /
+                    lmod_2$coefficients[[2]],
+                slope = 1 / lmod_2$coefficients[[2]],
+                color = "green")
+
+# they cross when x = (y - b) / m
+```
+
+6. 
+
+```{r}
+data(cheddar, package = "faraway")
+cheddar
+
+lmod_1 <- lm(taste ~ Acetic + H2S + Lactic, cheddar)
+
+lmod_1 %>% coefficients
+
+lmod_1$fitted.values %>% cor(cheddar$taste) %>% .^2
+
+lmod_1 %>% summary()
+
+# this is the multiple R.squared. The multiple R.squared is the squared correlation between the fitted values and the actual values.
+
+lmod_2 <- lm(taste ~ Acetic + H2S + Lactic -1, cheddar)
+lmod_2 %>% summary()
+
+# the new value of R^2 is .8877. 
+```
+
+When R doesn't have an intercept, it changes the R squared calculation from 
+
+$R^2 = \frac{\sum_i (\hat{y}_i - \bar{y})^2}{\sum_i (y_i - \bar{y})^2}$
+
+to 
+
+$R^2 = 1 - \frac{\sum_i(y_i - \hat{y_i})^2}{\sum_i y_i^2}$
+
+Since there is no subtraction in the denominator of the modified term, it becomes larger which, for the same or similar mse causes the R^2 value to increase. Essentially, the larger the mean of a response relative to other variation, the more slack we have and the more chance we have of our interceptless form dominating our intercept form. 
+
+
+In our case we have a relatively large mean:
+
+```{r}
+cheddar$taste %>% mean()
+```
+
+```{r}
+lmod_1 %>% AIC()
+lmod_2 %>% AIC()
+
+lmod_1 %>% BIC()
+lmod_2 %>% BIC()
+```
+
+With both the Akaike Information Criterion and the Bayesian Information Criterion, we see that the first linear model provides a better fit (where the goal it to minimize these values.)
+
+Akaike Information Criterion: 
+
+When a statistical model is used to represent the process that generated the data, the representation will almost never be exact; some information will be lost. AIC estimates the relative amount of information lost by a given model. The less information a model loses, the higher the quality of the model. 
+
+AIC deals with the trade off between the goodness of fit of the model and the simplicity of the model. 
+
+Let $L$ be the maximum value of the likelihood function for the model and let $k$ be the number of estimated parameters in the model. Then the AIC value is the following: 
+
+$\mathrm{AIC} = 2k - 2 \ln(L)$
+
+Note that AIC doesn't tell us anything about the quality of a model, only the quality relative to other models. 
+
+Bayesian Information Criterion: 
+
+Similarly to AIC, the definition of BIC is 
+
+$\mathrm{BIC} = \ln(n)k - 2 \ln(L)$
+
+Where L is the maximized value of the likelihood function, n is the number of data points in the observed data (or the sample size), and k is the number of parameters estimated by the model. 
+
+The BIC suffers from two main limitations: 
+
+1. The above approximation is only valid when n >> k 
+2. The BIC can not handle complex collections of models (as in variable selection problems in high dimensions)
+
+
+```{r}
+# compute the regression coefficients from the original fit using the QR decomposition
+
+# get the model matrix
+x_mat <- model.matrix(~ Acetic + H2S + Lactic, cheddar)
+
+y <- cheddar$taste
+
+# compute QR decomp for cheddar
+qrx <- qr(x_mat)
+
+# extract the Q matrix
+dim(qr.Q(qr_taste))
+
+# get Q_f
+f <- t(qr.Q(qr_taste)) %*% y
+
+# solve R beta = f
+backsolve(qr.R(qrx), f)
+```
+
+
+
+```{r
+# extract the X matrix
+(x_mat <- model.matrix(~ Area + Elevation + Nearest + Scruz + Adjacent, gala))
+
+# grab response variable
+y <- gala$Species
+
+
+# compute the QR decomp for the Galapogos data
+qrx <- qr(x_mat)
+
+# the components of the decomp must be extracted by other functions. extract the Q matrix
+dim(qr.Q(qrx))
+
+# we only need the first p columns, this returns Q_f
+(f <- t(qr.Q(qrx)) %*% y)
+
+# solving Rbeta = f is easy due to the triangular form of R
+backsolve(r = qr.R(qrx), x = f)
+
+# compare
+lmod_1 %>% coefficients()
+```
+
+7. 
+
+In the data below, each of the four factors is coded as + or - depending on whether the low or high setting for the factor was used. 
+
+```{r}
+data(wafer, package = "faraway")
+wafer
+
+(lmod_1 <- lm(resist ~ x1 + x2 + x3 + x4, wafer))
+
+# extract the X matrix using the model.matrix function
+x_mat <- model.matrix(~ x1 + x2 + x3 + x4, wafer)
+
+# compute the correlation in the x matrix
+cor(x_mat)
+
+lmod_1 %>% coefficients()
+
+# what difference in resistance is expected when moving from low to high levels in x1?
+map(1:100, ~ 236.7812 + .x - 69.8875 + 43.5875 -14.4875) %>% flatten_dbl() %>% tibble("x1" = 1:100, "resistance" = .) %>% plot()
+
+# refit the model without x4. What changed?
+(lmod_2 <- lm(resist ~ x1 + x2 + x3, wafer))
+
+# the intercept changed slightly, but the coefficient stayed the same
+
+# explain how the change in regression coefficients is related to the correlation matrix.
+
+# this is a central composite design, so the features are orthogonal to each other. Thus when adding and subtracking features, the others are not effected as cor(x1, x_n) = 0.
+```
+
+
+8. 
+
+```{r}
+data(truck, package = "faraway")
+truck %>% head()
+
+truck %>% names() %>% .[-6]
+
+(lmod_1 <- lm(height ~ B + C + D + E + O, truck))
+
+truck %>% summary()
+
+(lmod_2 <- lm(height ~ B + C + D + E, truck))
+
+(x_mat <- model.matrix(~ B + C + D + E + O, data = truck))
+
+# construct a predictor A which is set to B + C + D + E, then fit a linear model with a b c d e o. Do the coefficients for all six predictors appear int he regression summary? Explain
+
+truck %<>%
+    mutate_at(.vars = vars(1:5), funs(ifelse(. == "-", -1, 1))) %>%
+    mutate(A = rowSums(.[1:5]))
+
+(lmod_3 <- lm(height ~ A + B + C + D + E + O, truck))
+
+lmod_3 %>% summary()
+
+# O doesn't appear because of singularities. This is probably happening because we have some variables that are perfectly collinear. When we add A, it occurs 100% of the time with b, c, d, e. 
+cor(truck)
+alias(lmod_3)
+
+# attempt to compute beta from (xtx)-1xty
+(x_mat <- model.matrix(~ A + B + C + D + E + O, data = truck))
+y <- truck$height
+solve(crossprod(x_mat, x_mat))
+```
