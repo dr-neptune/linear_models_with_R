@@ -657,3 +657,111 @@ t_stat^2
 
 5. find a formula relating R^2 and the F-test for regression 
 
+$R^2 = 1 - (1 + F \cdot \frac{p-1}{n - p})^{-1}$
+
+6. 
+
+```{r}
+data(happy, package = "faraway")
+
+happy
+
+(lmod <- lm(happy ~ ., happy))
+
+# which predictors were statistically significant at the 1% level?
+lmod %>% summary()
+
+# only love was significant at the 1% level
+
+# b. What assumption used to perform the t-tesets seems questionable? The assumption of normality 
+happy$happy %>%
+    tibble() %>%
+    ggplot(aes(x = .)) +
+    geom_density()
+
+# c. use the permutation procedure to test the significance of the money predictor
+
+# extract the F-statistic for later computation
+(lmod_sum <- lmod %>% summary)
+
+lmf <- lmod_sum$fstatistic
+
+1 - pf(lmf[1], lmf[2], lmf[3])
+
+# use sample to compute the F-statistic for 4000 randomly selected permutations and see what proportion extends the F-statistic for the original data
+nreps <- 4000
+set.seed(8888) 
+
+fstats <- map_dbl(1:nreps, ~ lm(happy ~ sample(money) + sex + love + work, happy) %>%
+                 summary() %$% fstatistic %>% .[1])
+
+mean(fstats > lmf[[1]])
+```
+
+We get 0.0705, which is similar to the normal assumption based p-value for money of 0.0749. 
+
+```{r}
+# do the same for t-tests
+
+# extract money t_stat
+orig_t_abs <- lmod_sum %>% broom::tidy() %>% slice(2) %>% pluck(4)
+
+# perform 4000 permutations of money and check what fractions of the t-tests exceed 1.84 in value
+t_stats <- map_dbl(1:nreps, ~ lm(happy ~ sample(money) + sex + love + work, happy) %>%
+                                summary() %>% broom::tidy() %>% slice(2) %>% pluck(4) %>% abs())
+
+mean(t_stats > orig_t_abs)
+```
+
+We get the outcome of 0.07775, which is very similar to the normally assumed approach of 0.0749. 
+
+
+```{r}
+fstats %>% tibble() %>%
+    ggplot(aes(x = .)) +
+    geom_density()
+
+t_stats %>% tibble() %>%
+    ggplot(aes(x = .)) +
+    geom_histogram() 
+
+# create t_stat values
+grid_t <- seq(-3, 3, length = 300) %>% map_dbl(., ~ dt(x = .x, df = 38) %>% abs())
+
+grid_t %<>% tibble()
+
+t_stats %>% tibble() %>%
+    ggplot(aes(x = .)) +
+    geom_histogram(aes(y = ..density..)) +
+    geom_density(aes(x = .), data = grid_t)
+```
+
+```{r}
+# use the bootstrap procedure to compute 90 and 95% confidence intervals for beta_money. Does zero fall within these confidence intervals? Are these results consistent with previous tests?
+coef_mat <- matrix(NA, nreps, 5)
+resids <- residuals(lmod)
+preds <- fitted(lmod)
+
+for (i in 1:nreps) {
+    bootstrap <- preds + sample(resids, rep = TRUE)
+    bmod <- update(lmod, bootstrap ~ .)
+    coef_mat[i, ] <- coef(bmod)
+}
+ 
+colnames(coef_mat) <- c("intercept", colnames(happy[,2:5]))
+coef_mat %<>% data.frame()
+
+# 90 confint
+map_dfc(coef_mat, ~ quantile(.x, c(0.05, 0.95)))
+lmod %>% confint(level = 0.9)
+
+# 95 confint 
+map_dfc(coef_mat, ~ quantile(.x, c(0.025, 0.975)))
+lmod %>% confint(level = 0.95)
+```
+
+For the 90% CI: 
+- only sex has the zero fall within the confidence intervals 
+
+For the 95% CI: 
+- sex and money has the zero fall within the confidence intervals 
