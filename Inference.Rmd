@@ -461,13 +461,199 @@ Using just these confidence intervals we see that when we take the 90% confidenc
 Checking the 95% confidence interval, we see that it does contain 0 and therefore we fail to reject the null hypothesis that beta_age = 0.
 
 ```{r}
+require(ellipse)
 plot(ellipse(lmod, c(4, 5)), type = "l")
 points(coef(lmod)[4], coef(lmod)[5], pch = 19)
-# add univariate confidence intervals for both dims
+points(0, 0, pch = 2)
 abline(v = confint(lmod)[4,], lty = 2)
 abline(h = confint(lmod)[5,], lty = 2)
 ```
 
 The outcome of the origin on the the display tells us the outcome of the hypothesis test that beta_age = beta_lbph = 0. Since the origin lies within the ellipse and our 95% confidence intervals, we fail to reject the joint hypothesis. 
 
+```{r}
+# Execute the permutation test corresponding to the t-test for age in this model
+
+# grab age information from summary 
+(lmod %>% summary() %>% broom::tidy() %>% pluck(4, 4) -> age_info)
+
+lmod %>% summary()
+
+# perform 4000 permutations of age and check which fraction of the t-statistics exceeds -1.76 in absolute value
+num_reps <- 4000
+
+tstats <- map(1:num_reps, ~
+                    lm(lpsa ~ lcavol + lweight + sample(age) +
+                           lbph + svi + lcp + gleason + pgg45, prostate) %>%
+    summary() %>%
+    broom::tidy() %>%
+    pluck(4, 4))
+
+tstats %>% flatten_dbl() %>% plot()
+
+tstats %<>%
+    map(abs) %>%
+    flatten_dbl()
+
+
+mean(tstats > abs(age_info))
+```
+
+This is very similar to the observed normal p-value of 0.08229
+
+```{r}
+# remove all the predictors that are not significant at the 5% confidence level. Test this model against the original model. Which is preferred?
+(lmod2 <- lm(lpsa ~ lcavol + lweight + svi, prostate))
+
+lmod2 %>% summary()
+
+lmod %>% broom::glance()
+lmod2 %>% broom::glance()
+
+anova(lmod2, lmod)
+```
+
+Upon testing the new simpler model against the original complex model, we see that the p-value is pretty high (.21), signifying there is not a significant difference between the two models. Therefore, we should favor the simpler model (lmod2).
+
+
+2. 
+
+```{r}
+data(cheddar, package = "faraway")
+
+cheddar %>% head()
+
+# fit a regression model with taste as the response, and the three chemical contents as predictors. Identify the predictors that are statistically significant at the 5% level
+lmod <- lm(taste ~ ., cheddar)
+
+lmod %>% summary()
+```
+
+The predictors that are significant at the 5% level are H2S and Lactic. 
+
+```{r}
+# Fit a linear model where all 3 predictors are measured on their original scale. Identify the statistically significant predictors
+lmod2 <- lm(taste ~ log(Acetic) + log(H2S) + Lactic, cheddar)
+
+lmod2 %>% summary()
+```
+
+In this case, H2S and Lactic are both still significant. The p-values changed very slightly. 
+
+```{r}
+# can we use an F-test to compare these two models?
+# yes, because the F-test applies not just to when one model is a subset of the other, but also to when one model is a subspace of the other.
+anova(lmod, lmod2)
+
+# we see that there is no difference in p-value since they contain the same terms, but it shows the difference in RSS. The first model is a better fit for the data since it has a RSS difference of 27.825. 
+```
+
+```{r}
+# if H2S is increased 0.01 for the first model, what change in taste would be expected?
+lmod %>% summary()
+
+# we would expect an increase of 0.039118 points for taste
+(cheddar %>% slice(2) -> row_2)
+
+broom::augment(lmod)
+
+# regular model 
+((row_2[[2]] * 0.3277) + (row_2[[3]] * 3.9118) + (row_2[[4]] * 19.6705) - 28.8768 -> out_1)
+
+# increase H2S by 0.01
+((row_2[[2]] * 0.3277) + ((row_2[[3]] + 0.01) * 3.9118) + (row_2[[4]] * 19.6705) - 28.8768 -> out_2)
+
+# difference
+out_2 - out_1
+```
+
+```{r}
+# what is the percentage change in H2S on the original scale corresponding to an additive increase of 0.01 on the natural log scale?
+cheddar %>%
+    select(H2S) %>%
+    mutate(additive = H2S + log(H2S + 0.01),
+           difference = (additive - H2S) / H2S)
+```
+
+3. 
+
+```{r}
+data(teengamb, package = "faraway")
+
+teengamb
+
+lmod <- lm(gamble ~ ., teengamb)
+
+lmod %>% summary()
+```
+
+Only income and sex are significant at the 0.05 level. 
+
+The coefficient for sex should be interpreted as follows: If the sex of the person is female (corresponding to a 1 rather than a 0), we can expect a decrease in gamble of 22.11. 
+
+```{r}
+# fit a model with just income as a predictor and use an F-test to compare it to the full model
+lmod2 <- lm(gamble ~ income, teengamb)
+
+lmod2 %>% summary()
+
+
+anova(lmod, lmod2)
+```
+
+From the F-test, we see that removing the other predictors gives us a large increase in the sum of squared errors. We see that there is a significant difference made by the extra predictors, and we fail to reject the more complex model. 
+
+4. 
+
+```{r}
+data(sat, package = "faraway")
+
+sat
+
+# fit model 
+(lmod <- lm(total ~ expend + ratio + salary, sat))
+
+# test hypothesis that beta_salary = 0
+(lmod2 <- lm(total ~ expend + ratio, sat))
+
+anova(lmod2, lmod)
+
+# a p-value of 0.066 tells us that the null hypothesis can not be rejected, i.e. that salary is likely not so important
+
+lmod %>% summary()
+
+# test hypothesis that beta_salary = beta_ratio = beta_expend = 0
+(lmod3 <- lm(total ~ 1, sat))
+
+anova(lmod3, lmod)
+
+# our p-value here of 0.0129 tells us that we can reject the null hypothesis, and the more complex model is justifiable. Our summary of our first linear model shows that none of the variables are significant, but our process fails when we test multiple coefficients at once. 
+
+lmod3 %>% summary()
+```
+
+```{r}
+# now add takers to the model. Test beta_takers = 0.
+(lmod4 <- lm(total ~ expend + ratio + salary + takers, sat))
+
+lmod4 %>% summary()
+
+anova(lmod, lmod4)
+
+# our hypothesis test shows that takers is exceedingly important and we can reject the null hypothesis that beta_takers = 0
+
+# demonstrate that the f-test and the t-test are equivalent here
+lmod4 %>% summary()
+
+# perform t-test
+(t_stat <- -2.9045 / 0.2313)
+
+# same p-value
+2 * pt(t_stat, 45)
+
+# same F-statistic
+t_stat^2
+```
+
+5. find a formula relating R^2 and the F-test for regression 
 
