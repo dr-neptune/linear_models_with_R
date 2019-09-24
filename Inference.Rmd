@@ -747,7 +747,7 @@ for (i in 1:nreps) {
     bmod <- update(lmod, bootstrap ~ .)
     coef_mat[i, ] <- coef(bmod)
 }
- 
+
 colnames(coef_mat) <- c("intercept", colnames(happy[,2:5]))
 coef_mat %<>% data.frame()
 
@@ -765,3 +765,137 @@ For the 90% CI:
 
 For the 95% CI: 
 - sex and money has the zero fall within the confidence intervals 
+
+7. 
+
+```{r}
+data(punting, package = "faraway")
+punting
+
+# a.
+(lmod <- lm(Distance ~ RStr + LStr + RFlex + LFlex, punting))
+
+lmod %>% summary()
+
+# at the 5% level, none of the predictors are significant
+
+# b. Use an F-test to determine whether collectively these four predictors have a relationship to the response
+lmod_null <- lm(Distance ~ 1, punting)
+
+anova(lmod_null, lmod)
+
+# since our P value is ~ 0.02, we fail to reject the more complex hypothesis and we reject the null hypothesis that our coefficients are zero for our four predictors
+
+# c. Relative to the model in a, test whether the left and right leg strengths have the same effect.
+lmod %>% summary()
+
+lmod_r <- lm(Distance ~ RStr + RFlex + LFlex, punting)
+lmod_l <- lm(Distance ~ LStr + RFlex + LFlex, punting)
+
+anova(lmod_r, lmod)
+anova(lmod_l, lmod)
+
+# from the F-tests above, we see that the right leg strength has a greater effect on the reduction of the original model's RSS than left leg strength. When looking at the summary, we also see that Rstr has a greater overall magnitude than LStr and a lower p-value.
+
+# d. Construct a 95% confidence region for (beta_rstr, beta_leftstr). Explain how the test in C relates to this region.
+set.seed(8888)
+
+lmod
+nreps <- 4000
+coef_mat <- matrix(NA, nreps, 5)
+resids <- residuals(lmod)
+preds <- fitted(lmod)
+
+for (i in 1:nreps) {
+    bootstraps <- preds + sample(resids, rep = TRUE)
+    bmod <- update(lmod, bootstraps ~ .)
+    coef_mat[i,] <- coef(bmod)
+}
+
+colnames(coef_mat) <- c("Intercept", colnames(punting[,3:6]))
+coef_mat %<>% data.frame()
+map_dfc(coef_mat, ~ quantile(.x, c(0.025, 0.975)))
+
+coef_mat %>% 
+    ggplot(aes(x = RStr)) +
+    geom_density(fill = "lightblue") +
+    geom_vline(xintercept = c(-0.203, 1.25), lty = 2) +
+    xlim(c(-2, 2)) -> p1
+
+coef_mat %>% 
+    ggplot(aes(x = LStr)) +
+    geom_density(fill = "indianred") +
+    geom_vline(xintercept = c(-0.961, 0.587), lty = 2) +
+    xlim(c(-2, 2)) -> p2
+
+cowplot::plot_grid(p1, p2, align = "h", axis = "b", nrow = 2)
+```
+
+When looking at the bootstrap distributions, we see that the parameter distribution for right leg is much more likely to be nonzero, and therefore a pronounced effect, than the left leg. 
+
+```{r}
+# e. Fit a model to test the hypothesis that it is total leg strength defined by adding the right and left leg strengths that is sufficient to predict the response in comparison to using the individual left and right leg strengths
+(lmod_both <- lm(Distance ~ I(RStr + LStr), punting))
+(lmod_indiv<- lm(Distance ~ RStr + LStr, punting))
+
+lmod_both %>% summary()
+lmod_indiv %>% summary()
+
+anova(lmod_both, lmod_indiv)
+```
+
+We see that the P-value for our F-test is 0.6, and we fail to reject the null hypothesis that the sum of left and right legs is sufficient. 
+
+```{r}
+# f. Relative to the model in a, test whether the right and left leg flexibilities have the same effect
+lmod %>% summary()
+
+lmod_l <- lm(Distance ~ RStr + LStr + LFlex, data = punting)
+lmod_r <- lm(Distance ~ RStr + LStr + RFlex, data = punting)
+
+# test RFlex
+anova(lmod, lmod_l)
+
+# test Lflex
+anova(lmod, lmod_r)
+```
+
+We see from the F-tests above that RFlex has a higher effect size than LFlex. 
+
+```{r}
+# g. Test for right left symmetry by performing tests in c and f simultaneously
+lmod %>% summary()
+
+lmod_l <- lm(Distance ~ LStr + LFlex, data = punting)
+lmod_r <- lm(Distance ~ RStr + RFlex, data = punting)
+
+# test right
+anova(lmod, lmod_l)
+
+# test left
+anova(lmod, lmod_r)
+```
+
+We see from the F-tests above that the right leg strength and flexibility have a larger effect than the left legs strength and flexibility 
+
+```{r}
+# h. Fit a model with Hang as the response and the same four predictors. Can we make a test to compare this model to that used in a?
+hang_mod <- lm(Hang ~ LStr + RStr + LFlex + RFlex, data = punting)
+
+hang_mod %>% summary()
+
+anova(hang_mod, lmod)
+
+punting
+```
+
+Upon looking into it, since we have made the independent variables the same and have only switched out the dependent variables, we can compare the regression coefficients between our independent variables using seemingly unrelated regression. Essentially, we wish to test the difference between two dependent regression coefficients from two models that share all of the same independent variabels, but different dependent variables.
+
+A set of equations that has contemporaneous cross-equation error correlation (i.e. the error terms in the regression equations are correlated) is called a seemingly unrelated regression (SUR) system. At first look, the equations seem unrealted, but the equations are related through the correlation in the errors. 
+
+```{r}
+fit_sur <- systemfit::systemfit(list(lmod1 = Hang~LStr+RStr+LFlex+RFlex, lmod2 = Distance~LStr+RStr+LFlex+RFlex), data = punting)
+
+fit_sur %>% summary()
+```
+

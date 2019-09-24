@@ -1,0 +1,115 @@
+
+```{r}
+library(faraway)
+library(tidyverse)
+library(magrittr)
+library(broom)
+```
+
+# Prediction 
+
+Say we have built a model $y = X \beta + \epsilon$. Given a new set of predictors, $x_0$, the predicted response is $\hat{y_0 = x_0^T \hat{\beta}}$.
+
+We need to asses the uncertainty in this prediction in order to give decision makers more than a point estimate. 
+
+## 4.1 | Confidence Intervals for Predictions 
+
+There are two kinds of predictions made from regression models. One is a predicted mean response and the other is a prediction of a future observation. 
+
+Suppose we have built a regression model on houses
+
+- A prediction of a future value would be the following : Suppose a house comes on the market with characteristics $x_0$. We can set the rental price as $y = X \beta + \epsilon$. Since $E(\epsilon) = 0$, the predicted price is $x_0^T\hat{\beta}$, but when assessing the variance of this prediction, we must include the variance of $\epsilon$.
+
+- A predicted mean response would be the following: Given a house with characteristics $x_0$, what would it rent for on average? This selling price is $x_0^T\beta$ and is again predicted by $x_0^T\hat{\beta}$, but now only the variance in $\hat{\beta}$ needs to be taken into account. 
+
+## 4.2 | Predicting Body Fat 
+
+```{r}
+# load data
+data(fat, package = "faraway")
+
+(fat %<>% as_tibble())
+
+# fit model 
+lmod <- lm(brozek ~ age + weight + height +
+               neck + chest + abdom + hip +
+               thigh + knee + ankle + biceps +
+               forearm + wrist, data = fat)
+
+# brozek is Brozek's equation, which estimates body fat from density
+
+# create a set of predictors for an average man
+(x <- model.matrix(lmod) %>% as_tibble())
+(x0 <- map_dfc(x, ~ median(.x)))
+(y0 <- sum(x0 * coef(lmod)))
+```
+
+The predicted body fat for the typical man in this case is ~ 17.5%. 
+
+The same result may be obtained more directly using the predict function:
+
+```{r}
+predict(lmod, new = x0)
+```
+
+Now if we want a 95% CI for the prediction, we must decide whether we are predicting the same body fat for one man or the mean body fat for all men with the same characteristics
+
+```{r}
+# one person
+predict(lmod, x0, interval = "prediction")
+```
+
+The prediction interval is quite large, as it encompasses the uncertainty of the entire model for its output.
+
+```{r}
+# all men with the same characteristics
+predict(lmod, x0, interval = "confidence")
+```
+
+The prediction interval for the mean above is much narrower, indicating we can be more certain about the average body fat of the man with median characteristics. 
+
+There are two types of extrapolation: quantitative and qualitative. Quantitative extrapolation concerns x_0 which are far from the original data. In general, prediction intervals become wider as we move further from the data. 
+
+Let's see what happens with a prediction for values at the 95th percentile of data:
+
+```{r}
+# generate sample at the 95% percentile for all of the predictors
+(x1 <- map_dfc(x, ~ quantile(.x, 0.95)))
+
+# one person
+predict(lmod, x1, interval = "prediction")
+
+# mean for given characteristics 
+predict(lmod, x1, interval = "confidence")
+```
+
+We see that the interval for the mean is now almost 4% wide, which is a considerable increase in uncertainty over the uncertainty with the median sample. 
+
+The prediction interval is only slightly wider because the interval is now dominated by the new error $\epsilon$ rather than the uncertainty in the estimate of $\beta$. 
+
+In this case, we can account for parametric uncertainty using the methods we have described, but model uncertainty is harder to quantify. 
+
+# 4.3 | Autoregression 
+
+```{r}
+data(airpass, package = "faraway")
+
+airpass %<>% as_tibble()
+
+# fit linear model 
+(lmod <- lm(log(pass) ~ year, airpass))
+
+# grab fitted values 
+pred_vals <- augment(lmod) %>% select(2:3)
+
+# plot linear fit 
+airpass %>%
+    ggplot(aes(x = year, y = pass)) +
+    geom_line() +
+    geom_line(color = "mediumpurple", data = pred_vals,
+              aes(x = year, y = exp(.fitted)))
+```
+
+This captures the general upward trend in numbers, but does not capture the seasonal variation. 
+
+
