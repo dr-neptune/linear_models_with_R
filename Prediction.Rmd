@@ -112,4 +112,57 @@ airpass %>%
 
 This captures the general upward trend in numbers, but does not capture the seasonal variation. 
 
+Suppose we wish to predict passenger numbers for the next month. We might expect this to depend on the current month. The seasonal variation also suggests that we use the observed numbers from 12 months ago. Since we are already considering a monthly change, it might also make sense to use the numbers from 13 months ago as well. 
 
+We combine these in a regression model: 
+
+$y_t = \beta_0 + \beta_1 y_{t-1} + \beta_{12} y_{t-12} + \beta_{13} y_{t-13} + \epsilon_t$
+
+This is an example of an autoregressive process. The response depends on past values of the response. The $y_{t-i}$ are called lagged variables. We can construct a matrix of the lagged variables with the embed function. 
+
+
+```{r}
+lag_df <- embed(log(airpass$pass), dimension = 14) %>% as_tibble() %>% set_colnames(c("y", paste0("lag", 1:13)))
+
+(armod <- lm(y ~ lag1 + lag12 + lag13, lag_df))
+
+armod %>% summary() %>% tidy()
+```
+
+We see all three lagged variables are strongly significant (at the 1 / 1000 level) and the R^2 is very high. It is also now redundant to include a year term in the model since this linear change in time is taken care of with the lag1 term.
+
+```{r}
+# check the fit
+pred_vals <- augment(armod)
+
+# plot linear fit 
+airpass %>%
+    ggplot(aes(x = year, y = pass)) +
+    geom_line() +
+    geom_line(color = "mediumpurple", data = pred_vals,
+              aes(x = airpass$year[14:144], y = exp(.fitted)))
+```
+
+Suppose we wish to predict future values. The last observation in our data is 
+
+```{r}
+lag_df[nrow(lag_df),]
+```
+
+The current response becomes the lag one value and the other two also shift. A 95% prediction interval for the logged number of passengers is : 
+
+```{r}
+predict(object = armod, newdata = tibble(lag1 = 6.0684, lag12 = 6.0331, lag13 = 6.0039), interval = "prediction")
+```
+
+# 4.4 | What Can Go Wrong with Predictions? 
+
+1. Bad Model. 
+2. Quantitative Extrapolation. We try to predict outcomes for cases with predictor values much different from what we saw in the data. 
+3. Qualitative Extrapolation. We try to predict outcomes for observations that come from a different population. 
+4. Overconfidence due to overfitting. Practicioners searching around for good models for some data often do too good a job in finding a fit, which can lead to an unrealistically small variance 
+5. Black swans. Sometimes errors appear to be normally distributed because we haven't seen enough data to be aware of extremes. 
+
+# Exercises 
+
+1. 
