@@ -166,3 +166,196 @@ predict(object = armod, newdata = tibble(lag1 = 6.0684, lag12 = 6.0331, lag13 = 
 # Exercises 
 
 1. 
+
+```{r}
+# get data
+data(prostate, package = "faraway")
+
+# fit a model
+(lmod <- lm(lpsa ~ ., prostate))
+
+prostate %<>% as_tibble()
+
+# predict the lpsa for a patient with an appropriate 95% confidence interval 
+prostate %>%
+    add_row("lcavol" = 1.44692,
+            "lweight" = 3.62301,
+            "age" = 65.00000,
+            "lbph" = 0.30010,
+            "svi" = 0.00000,
+            "lcp" = -0.79851,
+            "gleason" = 7.00000, "pgg45" = 15.00000) %>%
+    slice(nrow(.)) %>%
+    predict(lmod, ., interval = "prediction")
+
+
+# repeat the last prediction, except for a patient who is 20
+prostate %>%
+    add_row("lcavol" = 1.44692,
+            "lweight" = 3.62301,
+            "age" = 20.00000,
+            "lbph" = 0.30010,
+            "svi" = 0.00000,
+            "lcp" = -0.79851,
+            "gleason" = 7.00000, "pgg45" = 15.00000) %>%
+    slice(nrow(.)) %>%
+    predict(lmod, ., interval = "prediction")
+
+```
+
+In the first prediction, the confidence interval is between 0.96 and 3.81, a range of 2.85. In the second prediction, the confidence interval is between 1.54 and 5.0, a difference of 3.46. This is likely because when we set the age to 20, we are setting the value of the point estimate for the age coefficient to 20, and, since 20 is an outlier age for someone getting this test done, this provides a lot of error that is propagated forward through the model's beta estimates. 
+
+```{r}
+# for the model in part a, remove all the nonsignificant predictors at the 5% level.
+lmod %>% summary()
+
+(lmod2 <- lm(lpsa ~ lcavol + lweight + svi, prostate))
+
+# now recompute all the predictions of the previous question. Are the CIs wider or narrower? Which predictions would you prefer?
+
+# predict the lpsa for a patient with an appropriate 95% confidence interval 
+prostate %>%
+    add_row("lcavol" = 1.44692,
+            "lweight" = 3.62301,
+            "age" = 65.00000,
+            "lbph" = 0.30010,
+            "svi" = 0.00000,
+            "lcp" = -0.79851,
+            "gleason" = 7.00000, "pgg45" = 15.00000) %>%
+    slice(nrow(.)) %>%
+    predict(lmod2, ., interval = "prediction")
+
+
+# repeat the last prediction, except for a patient who is 20
+prostate %>%
+    add_row("lcavol" = 1.44692,
+            "lweight" = 3.62301,
+            "age" = 20.00000,
+            "lbph" = 0.30010,
+            "svi" = 0.00000,
+            "lcp" = -0.79851,
+            "gleason" = 7.00000, "pgg45" = 15.00000) %>%
+    slice(nrow(.)) %>%
+    predict(lmod2, ., interval = "prediction")
+```
+
+The new confidence intervals are both the same: 0.93 - 3.81, with the same range of 2.85. This is because the only differentiating explanatory variable in the first two models, age, has been removed. Technically the CI is the same for the first group and narrower for the second. In this case, I would prefer the first model since it provides additional factors that affect the outcome and the outliers have a stronger effect on the final prediction.
+
+2. 
+
+```{r}
+data(teengamb, package = "faraway")
+
+teengamb %>% as_tibble()
+
+(lmod <- lm(gamble ~ ., teengamb))
+
+lmod %>% summary()
+
+# predict the amount that a male with average (given the data) status, income, and verbal score would gamble along with an appropriate 95% CI
+teengamb %>%
+    filter(sex == 0) %>% 
+    map_dfc(mean) %>%
+    predict(lmod, ., interval = "confidence")
+
+# repeat the prediction for a male with maximal values
+teengamb %>%
+    filter(sex == 0) %>% 
+    map_dfc(max) %>%
+    predict(lmod, ., interval = "confidence")
+```
+
+The CI for the maximal values is much wider, ~100 - ~42 ~= 58, whereas the mean valued male has a CI range of ~38 - ~21 ~= 17. This result is expected, because there is a lot of error when every value is an outlier. The lack of information makes our point estimates extremely uncertain and that error is propagated forward. 
+
+
+```{r}
+# fit a model with sqrt(gamble) as the response, but with the same predictors.
+(lmod2 <- lm(sqrt(gamble) ~ ., teengamb))
+
+lmod %>% summary()
+lmod2 %>% summary()
+
+# now predict the response and give a 95% CI for the `mean` individual in a). Take care to give the answer in the original units of response.
+teengamb %>%
+    filter(sex == 0) %>% 
+    map_dfc(mean) %>%
+    predict(lmod2, ., interval = "confidence") %>%
+    tidy() %>%
+    map_dfc(., function(x) x*x)
+```
+
+In this case, our new CI is (12.9, 26.9), with a range of 14 and a fitted value of 19.3. In the previous case, we say a CI of (~21, ~38) with a range of ~17 and a fitted value of 29.775. 
+
+In this case, our confidence interval is narrower and our model has a higher R^2 value. 
+
+```{r}
+# repeat the prediction for the model in c with the given values
+teengamb %>% as_tibble() %>% add_row("sex" = 1,
+                                     "status" = 20,
+                                     "income" = 1,
+                                     "verbal" = 10) %>%
+    slice(nrow(.)) %>%
+    predict(lmod2, ., interval = "prediction") 
+```
+
+This does not make sense, as gamble is a percentage of the takehome pay spent gambling. With the exception of one (likely errant) record, all of the gambling values are contained in [0, 100].
+ 
+```{r}
+teengamb %>%
+    filter(gamble <= 0 | gamble > 100)
+```
+
+3. 
+
+```{r}
+data(snail, package = "faraway")
+(snail %<>% as_tibble())
+
+# produce a table of mean water content for each combination of temperature and humidity
+xtabs(water ~ temp + humid, snail) / 4
+```
+
+Can you use this table to predict the water content for a temperature of 25c and 60% humidity? 
+
+We would need some sort of interpolation. Since 25 = (30 + 20)/2 and 60 = (45 + 75) / 2, we may infer the midpoint if the data was entirely linear or regular 
+
+```{r}
+# grab midpoint of temperatures at 45 humidity
+(72.5 + 69.50) / 2
+
+# grab midpoint of temperatures at 75 humidity
+(81.5 + 78.25) / 2
+
+# grab midpoint of midpoints
+
+(71 + 79.875) / 2
+```
+
+```{r}
+# fit a regression model and use the model to predict the water content at 25c, 60 humidity
+(lmod <- lm(water ~ temp + humid, snail))
+
+snail %>%
+    add_row("temp" = 25, "humid" = 60) %>%
+    slice(nrow(.)) %>% 
+predict(lmod, ., interval = "prediction")
+
+# predict water content for a temperature of 30c and a humidity of 75%
+snail %>%
+    add_row("temp" = 30, "humid" = 75) %>%
+    slice(nrow(.)) %>% 
+predict(lmod, ., interval = "prediction")
+```
+
+Compare your predictions to the prediction from a. Discuss the relative merits of the two predictions.
+
+For the first model, my initial prediction based on sheer linear interpolation was within the prediction interval, but still off by around 1. 
+
+```{r}
+snail %>%
+    add_row("water" = 75.4375, "temp" = 25, "humid" = 60) %>%
+    add_row("water" = 76.43681, "temp" = 25, "humid" = 60) %>%
+    add_row("water" = 82.62248, "temp" = 30, "humid" = 75) -> snail_out_1
+
+plotly::plot_ly(x = snail_out_1$water, y = snail_out_1$temp, z = snail_out_1$humid, type = "scatter3d", mode = "markers")
+```
