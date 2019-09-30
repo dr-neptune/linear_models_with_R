@@ -461,4 +461,54 @@ lag_df %>%
     slice(nrow(.))
 
 predict(armod, data.frame(lag1 = 7.2, lag12 = 7.72, lag13 = 7.5), interval = "prediction")
+
+# this equates to
+exp(7.55) %>% round(0)
+```
+
+d. Use your answer from the previous question to compute a prediction and interval for February 1980
+
+```{r}
+# in order to predict February, we take our predicted value for January and treat it as the lag1 variable. We also shift the lag12 and lag13 as well
+predict(armod, data.frame(lag1 = 7.55, lag12 = 7.51, lag13 = 7.72), interval = "prediction")
+
+# this equates to
+exp(7.51) %>% round(0)
+```
+
+e. Plot the fitted values against the observed values
+
+```{r}
+pred_vals %<>%
+    select("response" = y, everything())
+
+pred_vals %>%
+    ggplot(aes(x = response, y = .fitted)) +
+    geom_point() +
+    geom_segment(aes(x = response, y = .fitted, xend = .fitted, yend = .fitted), alpha = 0.3) +
+    geom_abline(slope = 1, intercept = 0, color = "mediumpurple") +
+    geom_point(aes(color = abs(.resid))) +
+    scale_color_continuous(low = "mediumpurple", high = "red") +
+    guides(color = FALSE) +
+    xlim(c(6.75, 8)) + ylim(c(6.75, 8)) +
+    geom_point(aes(y = .fitted), shape = 1)
+```
+
+Do you think the accuracy of the predictions will be the same for all months of the year? 
+
+No, accuracy will be better for months with less spread in the response e^ndeaths. This means that the summer and early fall months will be more accurate than the early months. 
+
+The absolute percentage error is a unitless accuracy metric that can be used as a simple measure of prediction accuracy: 
+
+```{r}
+pred_vals %>%
+    mutate(abs_p_e = abs(100 * (response - .fitted) / response),
+           month = rep_len(month.abb[1:12], nrow(.))) %>%
+    group_by(month) %>%
+    summarize(avg_ape = mean(abs_p_e)) %>%
+    arrange(avg_ape) %>%
+    ggplot(aes(x = reorder(month, avg_ape), y = avg_ape)) +
+    geom_col(fill = "mediumpurple", color = "gray6") +
+    geom_text(aes(label = round(avg_ape, 2)), position = position_dodge(width = 0.9), vjust = -0.25) +
+    xlab("month") + ylab("absolute percent error")
 ```
