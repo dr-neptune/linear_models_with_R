@@ -349,7 +349,7 @@ predict(lmod, ., interval = "prediction")
 
 Compare your predictions to the prediction from a. Discuss the relative merits of the two predictions.
 
-For the first model, my initial prediction based on sheer linear interpolation was within the prediction interval, but still off by around 1. 
+For the first model, my initial prediction based on sheer linear interpolation was within the prediction interval, but still off by around 1. The first prediction has merit because it is easier to calculate and can be done quickly. The second has merit because its likely more accurate, as it fits a linear model to the entire set of points as opposed to just the two closest points. 
 
 ```{r}
 snail %>%
@@ -358,4 +358,107 @@ snail %>%
     add_row("water" = 82.62248, "temp" = 30, "humid" = 75) -> snail_out_1
 
 plotly::plot_ly(x = snail_out_1$water, y = snail_out_1$temp, z = snail_out_1$humid, type = "scatter3d", mode = "markers")
+```
+
+d. The intercept in our model is 54.6%. Give two values of the predictors for which this represents the predicted response. 
+
+a) beta_1 * temp = - beta_2 * humid
+b) beta_2 * humid = - beta_1 * temp 
+
+Is the answer unique? No, it comprises all real numbers. 
+
+Do you think this represents a reasonable prediction? No, since none of the water data points lie near the intercept 
+
+```{r}
+lmod %>% summary()
+
+snail %>%
+    filter(between(water, 45, 60))
+
+snail$water %>% min()
+```
+
+e) For a temperature of 25 C, what value of humidity would give a predicted response of 80% water content? 
+
+```{r}
+lmod
+```
+
+Our formula for the linear model is 
+
+water = 52.6108 - 0.1833 * temp + 0.4735 * humid
+
+Filling this in, we get 
+
+80 = 51.6108 - 0.1833 * 25 + 0.4735 * humid 
+
+which, after algebraic manipulation gives us 
+
+(80 - 51.6108 + 0.1833 * 25)/0.4735
+
+which is 
+
+```{r}
+(80 - 51.6108 + 0.1833 * 25)/0.4735
+```
+
+4. 
+
+```{r}
+data(UKLungDeaths, package = "datasets")
+
+mdeaths %<>%
+    timetk::tk_tbl() %>%
+    mutate(year = lubridate::year(index),
+           month = lubridate::month(index)) %>%
+    select("date" = index, "ndeaths" = value, year, month)
+
+mdeaths %>%
+    ggplot(aes(x = date, y = ndeaths)) +
+    geom_line() +
+    xlab("year") + ylab("number of deaths") +
+    ggtitle("UK Lung Deaths") 
+```
+
+Deaths are most likely to occur in the first few months of the year
+
+```{r}
+mdeaths %>%
+    ggplot(aes(x = month, y = ndeaths)) +
+    geom_line() +
+    facet_wrap(~year) + 
+    xlab("month") + ylab("number of deaths") +
+    ggtitle("UK Lung Deaths") 
+```
+
+Fit an autoregressive model of the same form used for the airline data. Are all the predictors statistically significant? 
+
+```{r}
+lag_df <- embed(log(mdeaths$ndeaths), dimension = 14) %>% as_tibble() %>% set_colnames(c("y", paste0("lag", 1:13)))
+
+(armod <- lm(y ~ lag1 + lag12 + lag13, lag_df))
+
+armod %>% summary()
+
+pred_vals <- augment(armod)
+
+mdeaths %>%
+    ggplot(aes(x = date, y = ndeaths)) +
+    geom_line() +
+    geom_line(color = "mediumpurple", data = pred_vals,
+              aes(x = mdeaths$year[14:length(mdeaths$year)], y = exp(.fitted)))
+```
+
+Only the lag12 variable is statistically significant at any level. 
+
+Use the model to predict the number of deaths in January 1980 along with a 95% prediction interval
+
+```{r}
+mdeaths %>%
+    slice(nrow(.))
+
+lag_df %>%
+    slice(nrow(.))
+
+predict(armod, data.frame(lag1 = 7.2, lag12 = 7.72, lag13 = 7.5), interval = "prediction")
 ```
