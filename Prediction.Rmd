@@ -512,3 +512,76 @@ pred_vals %>%
     geom_text(aes(label = round(avg_ape, 2)), position = position_dodge(width = 0.9), vjust = -0.25) +
     xlab("month") + ylab("absolute percent error")
 ```
+
+5. 
+
+```{r}
+lmod
+
+lmod2 <- lm(brozek ~ age + weight + height + abdom, fat)
+
+lmod %>% summary()
+lmod2 %>% summary()
+
+anova(lmod2, lmod)
+```
+
+It is not justifiable to use the smaller value, as the P-value for the F-test is low enough to reject the null hypothesis that the smaller model is a better fit on the data.
+
+b. Compute a 95% prediction interval for the median predictor values and compare to the results to the interval for the full model
+
+```{r}
+fat %>% map_dfc(median) %>%
+    predict(lmod, ., interval = "prediction")
+
+fat %>% map_dfc(median) %>%
+    predict(lmod2, ., interval = "prediction")
+```
+
+Do the intervals differ by a practically important amount? 
+
+```{r}
+fat %>%
+    ggplot(aes(x = brozek)) +
+    geom_density(fill = "mediumpurple", color = "gray6") +
+    geom_vline(xintercept = c(17.49322, 9.61783, 25.36861), color = "gold") +
+    geom_vline(xintercept = c(17.84028, 9.696631, 25.98392), color = "red") +
+    ggtitle("Brozek Densities",
+            subtitle = "Median Prediction Intervals\nGold = LM_1\nRed = LM_2")
+```
+
+No.
+
+c. For the smaller model, examine all the observations from case numbers 25 to 50. 
+
+```{r}
+augment(lmod2) %>%
+    mutate(index = row_number()) %>% 
+    slice(25:50) %>%
+    select(index, 1:6, .cooksd) %>% 
+    arrange(desc(.cooksd))
+```
+
+Which two observations seem particularly anomalous? 
+
+The 29th and 42nd observations have very high cook's distances, indicating a lot of pull on the linear regression model.
+
+d. Recompute the 95% prediction interval for the median predictor variables after these two anomalous cases have been excluded.
+
+```{r}
+fat %>% slice(-c(39, 42)) %>%
+    map_dfc(median) %>%
+    predict(lmod2, ., interval = "prediction")
+
+fat %>%
+    ggplot(aes(x = brozek)) +
+    geom_density(fill = "mediumpurple", color = "gray6") +
+    geom_vline(xintercept = c(17.49322, 9.61783, 25.36861), color = "gold") +
+    geom_vline(xintercept = c(17.84028, 9.696631, 25.98392), color = "red") +
+    geom_vline(xintercept = c(17.84219, 9.698588, 25.98579), color = "blue") + 
+    ggtitle("Brozek Densities",
+            subtitle = "Median Prediction Intervals\nGold = LM_1\nRed = LM_2\nBlue = De-leveraged Pred")
+```
+
+This did not make much difference to the outcome.
+
