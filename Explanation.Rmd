@@ -1,0 +1,87 @@
+# Explanation
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(broom)
+library(faraway)
+```
+
+Sometimes explanation means causation and sometimes it is just a description of the relationships between variables. Causal conclusions require stronger assumptions than those used for predictive models. This chapter looks at the conditions necessary to conclude a causal relationship and what can be said when we lack these conditions.
+
+# Simple Meaning
+
+```{r}
+data(gala, package = "faraway")
+
+gala %<>% as_tibble()
+
+lmod <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent, gala)
+
+lmod %>% summary()
+```
+
+When looking at our beta_hat coefficients, it is alluring to describe them as something real, like a physical constant. Since our model has no strong theoretical underpinning, we are simply making an empirical model that we hope is a good approximation of reality. 
+
+Suppose we look at $\hat{\beta_{\mathrm{Elevation}}} = 0.32$. We can make a simple interpretation: a unit increase in x1 (elevation, 1 meter) will produce a change of beta_hat in the response y. This is saying essentially this: Suppose we compare two islands, where the second island is exactly like the first, but with an elevation 1 meter higher. Then we predict that the second island would have 0.32 Species more than the first. If the second island had 100 more meters of elevation, we would estimate an incrase of 32 species for the second island. 
+
+
+What if we consider a simpler model?
+
+```{r}
+lmod_2 <- lm(Species ~ Elevation, gala)
+```
+
+We now see that the coefficient for Elevation has changed from 0.32 to 0.2. This means that we cannot interpret a regression coefficient for a given predictor without reference to the other predictors in the model. 
+
+We show the two fits for elevation below. To show the relationship between elevation and the response for the five predictor model, we fix the other predictors at a typical value (the means). We then compute the predicted response for the observed values of elevation. This is called an effect plot
+
+```{r}
+# book implementation
+plot(Species ~ Elevation, gala)
+abline(11.3, 0.201)
+colMeans(gala)
+p <- predict(lmod, data.frame(Area = 261.7, Elevation = gala$Elevation,
+                              Nearest = 10.06, Scruz = 56.98, Adjacent = 261.1))
+i <- order(gala$Elevation)
+lines(gala$Elevation[i], p[i], lty = 2)
+
+# ggplot implementation
+
+col_means <- gala %>% map_dfc(mean)
+
+preds_df <- tibble("Species" = rep(NA, 30),
+                   "Elevation" = gala$Elevation,
+                   "Area" = rep(col_means %>% pluck(3), 30),
+                   "Nearest" = rep(col_means %>% pluck(5), 30),
+                   "Scruz" = rep(col_means %>% pluck(6), 30),
+                   "Adjacent" = rep(col_means %>% pluck(7), 30)) %>%
+    predict(lmod, .)
+
+gala %>%
+    ggplot(aes(y = Species, x = Elevation)) +
+    geom_point() + 
+    geom_abline(intercept = lmod_2$coefficients[[1]],
+                slope = lmod_2$coefficients[[2]]) +
+    geom_line(aes(sort(gala$Elevation), preds_df[preds_df %>% order()]), lty = 2)
+```
+
+We need to be more specific in our interpretation now. We could say a unit increase in x1 with the other named predictors held constant will produce a change of beta_1 in the response y. 
+
+For a simple one predictor model, a change in elevation will also be associated with a change in the other predictors.
+
+The idea of holding variables constant makes no sense for observational data, since these observables are not under our control. There are also hidden variables that we can't account for in our data which have an effect on species diversity, which are also impossible to hold constant. 
+
+Furthermore, there is no notion of causality. We can predict that taller islands have greater species diversity, but we can not say that altitude causes this. 
+
+
+# Causality 
+
+The view of causality here is that the causal effect of an action is the difference between the outcomes where the action was taken or was not taken. 
+
+For example, let $T = 0$ for the control and $T = 1$ for the treatment. Let $y_i^T$ denote the response for a patient $i$ when $T$ applies. The causal effect for patient $i$ is then defined as 
+
+$\delta_i = y_i^{1}, y_i^{0}$
+
+The practical problem is that we cannot usually apply both treatment and control at the same time. We only see one of the two outcomes, and they are usually mutually exclusive. The outcome we do not see is called the **counterfactual**. 
+
