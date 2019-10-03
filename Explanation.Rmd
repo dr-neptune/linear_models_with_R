@@ -85,3 +85,105 @@ $\delta_i = y_i^{1}, y_i^{0}$
 
 The practical problem is that we cannot usually apply both treatment and control at the same time. We only see one of the two outcomes, and they are usually mutually exclusive. The outcome we do not see is called the **counterfactual**. 
 
+# Designed Experiments 
+
+In a designed experiment, we have control over T, or our test and control groups. We control as many variables as possible over the conditions within an experiment in order to make stronger conclusions about the outcomes of our analysis. In experiment design, randomization is key to success.
+
+Consider the simplest case in which we only vary T, and assume that the groups T0 and T1 are mutually exclusive. Then we should randomly allocate each of our test subjects to the two groups in equal-ish numbers. 
+
+There are two compelling reasons to use randomization: 
+
+1. We can minimize the differences in individual variation. This reduces the chance that the control or treatment are favored. 
+
+2. A permutation test can be used to test the null hypothesis that there is no difference between the groups. The justification of the permutation test relies on the observed allocation being chosen randomly from all possible allocations to the groups. Since permutation tests often agree with their normal counterparts, like t-tests, we can often also use these alternatives as well rather than setting up the permutation test. 
+
+
+Suppose we are aware that our experimental units differ in identifiable ways. We may wish to incorporate this into the design by restricting the randomization. Then we can condition on our differences (suppose we use sex), and choose our random allocation from these subgroups. Then our treatment and control groups will also be balanced by the sex as well. In this example, sex is called a blocking variable. 
+
+In other cases, there may be variables which are not properties of the experimental units (like sex), but can be assigned - like time of exercise. In both situations, we want to arrange the design so that it is orthogonal. This is not essential for causal conclsions, but it does greatly simplify them.
+
+## Recap 
+
+### Permutation Tests
+
+Most of the tests initially covered have the assumption that errors are normally distributed. Permutation tests offer an alternative that need no assumption of normality. 
+
+An example would be to measure the F-statistic for the original data, and then to sample n permutations of the original data, get the F-statistics for them, and see what proportion of the permuted F-statistics exceed the original value. 
+
+### Orthogonal Design 
+
+Orthogonality allows us to easily interpret the effect of one predictor without regard to another. We can essentially interpret the effect of some random variable X1 without the effect of X2. 
+
+# Observational Data 
+
+Sometimes we cannot control the assignment of T, and we can only obtain observational data. In some cases, we can control which cases we observe from those potentially available. A sample survey can be used to collect the data, which, while allowing stronger and wider conclusions, is still observational data. 
+
+```{r}
+data(newhamp, package = "faraway")
+
+newhamp %<>% as_tibble()
+
+# machine ballots | D for Digital
+newhamp %>%
+    filter(votesys == "D") %>%
+    select(2:3) %>%
+    map_dfc(sum)
+
+# paper ballots | H for Hand
+newhamp %>%
+    filter(votesys == "H") %>%
+    select(2:3) %>%
+    map_dfc(sum)
+```
+
+We use the proportion voting for Obama in each ward as the response. Strictly speaking this is a binomial response and should be modeled as such. There is, however, a normal approximation to the binomial which holds when the sample is large enough and the probabilities are not close to 0 or 1. That holds for this sample. 
+
+A binomial variance is $np(1-p)$ for proportion p and sample size n. Both of these vary in this example, so the assumption of equal variance is violated here. We see how to fix this in ch 8.2, but to stay on track here we ignore it.
+
+```{r}
+# fit a linear model
+newhamp %>% glimpse()
+
+lmod <- lm(pObama ~ votesys, newhamp)
+
+lmod %>% summary()
+```
+
+In the output above, a 1 represents hand voting, and a 0 represents digital voting. This model takes the form $y_i = \beta_0 + \beta_1 T_i + \epsilon_i$. 
+
+We see that when digital voting is used, our votesysH predictor is 0 and we have a $\hat{\beta_0}$ value of ~ 35%. When hand voting is used, we get a votesysH predictor of 1 and we get a 4% higher probability output than digitally. We see that the P value for the indicator variable is very low, indicating it is significant. This means that Obama received a significantly higher proportion of the vote in the hand voting wards. 
+
+Did the voting method have some causal effect on the outcome? 
+
+Suppose that the "correct" model involved some third variable $Z$ and took the form:
+
+$y_i = \beta_0^* + \beta_1^* T_i + \beta_2^*Z_i + \epsilon_i$ and suppose this $Z$ was linked to $T$ by $Z_i = \gamma_0 + \gamma_1 T_i + \epsilon_i^`$. 
+
+$Z$ is sometimes called a **confounding variable**. If we substitute this into the former model, we find that
+
+$y_i = \beta_0^* + \beta_1^* T_i + \beta_2^*Z_i + \epsilon_i$
+
+$y_i = \beta_0^* + \beta_1^* T_i + \beta_2^*\gamma_0 + \gamma_1 T_i + \epsilon_i^` + \epsilon_i$
+
+$y_i = \beta_0^* + (\beta_1^* + \beta_2^*\gamma_0 + \gamma_1) T_i + \epsilon_i^` + \epsilon_i$
+
+Does this third variable Z exist for the new hampshire voting example? 
+
+Consider the proportion of votes for Howard Dean, a Democratic candidate in the previous campaign. We can add this term to the model:
+
+```{r}
+lmod2 <- lm(pObama ~ votesys + Dean, newhamp)
+
+lmod2 %>% summary()
+```
+
+We see that the effect of the voting system is no longer statistically significant, and the proportion voting for Dean shows a positive relationship to the proportion voting for Obama. This third variable is related to our "treatment" variable, votesys
+
+```{r}
+summary(lm(Dean ~ votesys, newhamp))
+```
+
+We see that there is an active confounder in this situation. In the next section we show how we can use counterfactual notions to clarify the effect of the voting system on preferences for Obama.
+
+# Matching 
+
