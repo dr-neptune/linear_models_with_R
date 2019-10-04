@@ -126,13 +126,13 @@ newhamp %<>% as_tibble()
 # machine ballots | D for Digital
 newhamp %>%
     filter(votesys == "D") %>%
-    select(2:3) %>%
+    dplyr::select(2:3) %>%
     map_dfc(sum)
 
 # paper ballots | H for Hand
 newhamp %>%
     filter(votesys == "H") %>%
-    select(2:3) %>%
+    dplyr::select(2:3) %>%
     map_dfc(sum)
 ```
 
@@ -186,4 +186,74 @@ summary(lm(Dean ~ votesys, newhamp))
 We see that there is an active confounder in this situation. In the next section we show how we can use counterfactual notions to clarify the effect of the voting system on preferences for Obama.
 
 # Matching 
+
+Suppose we randomly allocate two pools of experimental subjects to treatment and control. We try to balance them, but it may still be imbalanced with respect to the confounders, i.e. one group may be imbalanced in the treatment or control throwing off the others. We could try to fix this by forming matched pairs where the two members of the pair are as alike as possible with respect to the confounders. Then we would randomly assign the treatment and control groups. 
+
+We can then determine the effect of the treatment by looking at the difference in response for each pair. Then we have the knowledge that we have adjusted for the effect of confounding by balancing the differences between treatment and control. 
+
+On the New Hampshire data above, we can perform the matching technique. We wish to form matched pairs based on the similarity of proportion formerly supporting Dean. Within each pair, we would make a random assignment. 
+
+IRL, we can not make the random assignment but we can find pairs of wards with similar values of Dean proportion where one uses hand voting and the other uses digital. 
+
+```{r}
+library(Matching)
+
+set.seed(8888)
+
+newhamp %<>%
+    mutate(votesys = ifelse(votesys == "H", TRUE, FALSE))
+
+mm <- GenMatch(newhamp$votesys, newhamp$Dean, ties = FALSE, caliper = 0.05, pop.size = 1000)
+
+mmatch <- mm$matches[, 1:2]
+
+newhamp[c(19, 83), c("Dean", "pObama", "votesys")]
+```
+
+Since Dean is a continuous variable, it is difficult to find exact matches. We set caliper = 0.05 to accept matches within 0.05 standard deviations of Dean. We also specified that ties are not allowed so that each treatment ward will be matched to just one control. 
+
+```{r}
+plot(pObama ~ Dean, newhamp, pch = votesys + 1)
+with(newhamp, segments(Dean[mm$match[,1]], pObama[mm$match[,1]],
+                       Dean[mm$match[,2]], pObama[mm$match[,2]]))
+```
+
+```{r}
+matches <- tibble("dean_1" = newhamp$Dean[mmatch[,1]],
+                      "p_obama_1" = newhamp$pObama[mmatch[,1]],
+                      "dean_2" = newhamp$Dean[mmatch[,2]],
+                      "p_obama_2" = newhamp$pObama[mmatch[,2]])
+
+newhamp %>%
+    ggplot(aes(x = Dean, y = pObama)) +
+    geom_point(aes(color = votesys, shape = votesys)) +
+    geom_segment(data = matches, aes(x = dean_1,
+                     y = p_obama_1,
+                     xend = dean_2,
+                     yend = p_obama_2), alpha = 0.2) +
+    scale_color_brewer(palette = "Set2")
+```
+
+We can compute the difference between the pairs and perform a one sample t-test.
+
+```{r}
+matches %<>%
+    mutate(diff_dean = dean_1 - dean_2,
+           diff_obama = p_obama_1 - p_obama_2)
+
+t.test(matches$diff_obama) %>% tidy()
+
+matches %>%
+    ggplot(aes(y = diff_obama, x = dean_1)) +
+    geom_point() + 
+    geom_abline(slope = 0) +
+    geom_violin(alpha = 0.2, fill = "mediumpurple") 
+```
+
+From the above, we see that the differences are not significantly different from zero. In the plot, we see that the matched pairs show no real preference for hand or digital voting. 
+
+
+We were not able to do an experiment, and we were not able to view the counterfactual, but we were able to show matched wards with similar political outlooks by using the prior Dean vote proportion. Based on this comparison, we see no significant difference between the two methods. The observed difference is because voters who are inclined to pick Obama are also more likely to be present in hand voting wards. 
+
+# Covariate Adjustment 
 
