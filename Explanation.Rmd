@@ -244,9 +244,9 @@ matches %<>%
 t.test(matches$diff_obama) %>% tidy()
 
 matches %>%
-    ggplot(aes(y = diff_obama, x = dean_1)) +
+    ggplot(aes(x = diff_obama, y = dean_1)) +
     geom_point() + 
-    geom_abline(slope = 0) +
+    geom_vline(xintercept = 0) +
     geom_violin(alpha = 0.2, fill = "mediumpurple") 
 ```
 
@@ -256,4 +256,57 @@ From the above, we see that the differences are not significantly different from
 We were not able to do an experiment, and we were not able to view the counterfactual, but we were able to show matched wards with similar political outlooks by using the prior Dean vote proportion. Based on this comparison, we see no significant difference between the two methods. The observed difference is because voters who are inclined to pick Obama are also more likely to be present in hand voting wards. 
 
 # Covariate Adjustment 
+
+We can display the two earlier linear models for the proportion voting for Obama.
+
+```{r}
+plot(pObama ~ Dean, newhamp, pch = votesys+1)
+abline(h = c(.353, 0.353 + 0.042), lty = 1:2)
+abline(0.221, 0.5229)
+abline(0.221-0.005, 0.5229, lty = 2)
+```
+
+```{r}
+lm1 <- lmod$coefficients
+lm2 <- lmod2$coefficients
+
+newhamp %>%
+    ggplot(aes(x = Dean, y = pObama)) +
+    geom_point(aes(shape = votesys)) +
+    geom_hline(yintercept = lm1[[1]], lty = 1) +
+    geom_hline(yintercept = lm1[[1]] + lm1[[2]], lty = 2, color = "blue") +
+    geom_abline(intercept = lm2[[1]], slope = lm2[[3]], color = "mediumpurple", lty = 1) +
+    geom_abline(intercept = lm2[[1]] - lm2[[2]], slope = lm2[[3]], lty = 2,
+                color = "mediumpurple") + 
+    geom_segment(data = matches, aes(x = dean_1, 
+                     y = p_obama_1,
+                     xend = dean_2,
+                     yend = p_obama_2), alpha = 0.2)
+```
+
+If we consider the expected response for a fixed value of Dean, the difference between digital and hand is given by the vertical distance between the two lines. Each pair of connected lines vertically represents a local realizaion of that vertical difference. When we average the pairwise distance, we get an estimate of the vertical difference. Thus matching on a covariate and fitting a linear model where we adjust for the covariate by including it in the model are two ways to estimate the same thing. 
+
+Both approaches to drawing conclusions from observation studies are useful. The covariate adjustment method, sometimes called controlling for a covariate is easier to use and extends well to multiple confounders. It does however require that we specify a functional form of the covariate in the model in an appropriate way. We used linear models, but in higher dimensions it may be harder to verify (at least visually). 
+
+The matching approach is more robust in that it does not requre that specify a functional form. Our matching approach made use of the overlap in the data. The covariate adjustment method can also make full use of the data when there is less overlap, but it is vulnerable to the dangers of extrapolation when making comparisons. 
+
+# Qualitative Support for Causation 
+
+Sir Bradford Hill was a central figure in establishing the causal link between smoking and lung cancer. In Hill (1965) he laid out several general considerations that can reinforce the case for a causal link: 
+
+**Strength** - A large beta_hat value is useful. Known covariates can be adjusted for, while unobserved and unsuspected confounding variables can easily lead to small effects. It is less credible that some variable whose existence was previously unknown could counteract such a large effect.
+
+**Consistency** - A similar effect is found across many different population groups. Replication by independent research groups is particularly important.
+
+**Specificity** - The supposed causal factor is associated with a particular response and not with a wide range of other possible responses. If a particular outcome is prevalent in subjects with a particular factor, and the rest of the cohorts with that factor don't experience any other effects more strongly than others with a different factor then the case for causality is stronger. 
+
+**Temporality** - The supposed causal factor is determined or fixed before the outcome or response is generated. Sometimes it is not clear whether X causes Y or vice versa. It helps if X hapens before Y if we want to establish the direction of the effect. 
+
+**Gradient** - The response increases or decreases monotonically as the supposed causal variable increases. 
+
+**Plausibility** - There is a credible theory suggesting a causal effect. 
+
+**Experiment** - A natural experiment where subjects have apparently been randomly assigned values of the causal variable.
+
+# Exercises 
 
