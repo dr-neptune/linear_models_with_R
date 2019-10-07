@@ -310,3 +310,38 @@ Sir Bradford Hill was a central figure in establishing the causal link between s
 
 # Exercises 
 
+1. 
+
+```{r}
+data(teengamb, package = "faraway")
+
+teengamb %<>% as_tibble()
+
+names(teengamb)
+
+combns <- c("status", "income", "verbal",
+  "status + income", "status + verbal", "verbal + income",
+  "status + verbal + income")
+
+combns %<>%
+    map(., ~ lm(data = teengamb, as.formula(paste0("gamble ~ sex + ", .x))))
+
+combns[[8]] <- lm(gamble ~ sex, teengamb)
+
+combns %>% map(pluck())
+
+grab_beta_hat <- function(lm_out) {
+    lm_out %>%
+        tidy() %>%
+        slice(2) %>%
+        pluck(2)
+}
+
+combns %>% map(grab_beta_hat) %>% flatten_dbl() %>% summary()
+
+combns %>% map(., ~ summary(.x) %>% tidy())
+```
+
+The beta hat values for sex seem to be relatively stable, with a range of about 14, and always consistently negative and large. 
+
+
