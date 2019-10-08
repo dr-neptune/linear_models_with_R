@@ -344,4 +344,63 @@ combns %>% map(., ~ summary(.x) %>% tidy())
 
 The beta hat values for sex seem to be relatively stable, with a range of about 14, and always consistently negative and large. 
 
+2. 
+
+```{r}
+data(odor, package = "faraway")
+
+names(odor) 
+
+remove_strings <- c("odor", "temp")
+
+odor_components <- names(odor) %>%
+    str_remove_all(remove_strings) %>%
+    .[. != ""]
+
+components_size <- odor_components %>% append("") %>% length()
+
+library(gtools)
+
+odor_components %>% append("") %>% combinations(n = components_size, r = components_size - 1, repeats.allowed = FALSE)
+
+remove_pattern <- c("sex|gamble")
+
+names(teengamb) %>%
+    str_remove_all(., pattern = remove_pattern) %>%
+    .[. != ""] %>%
+    append("") %>%
+    combinations(n = length(.),
+                 r = length(.) - 1,
+                 repeats.allowed = FALSE)
+
+remove_strings %>% paste(collapse = "|")
+
+get_combns <- function(data, hold_out_vars) {
+    # turn list of strings into a regex
+    remove_pattern <- hold_out_vars %>% paste(collapse = "|")
+
+    # remove all the vars we wish to withold. Add "" for a space
+    names(data) %>%
+    str_remove_all(., pattern = remove_pattern) %>%
+    .[. != ""] %>%
+    append("") -> var_list
+    
+    # generate all the combinations
+    var_list %>%
+    combinations(n = length(var_list),
+                 r = length(var_list) - 1,
+                 repeats.allowed = FALSE) %>%
+        as_tibble() %>%
+        ## rowwise() %>% 
+        unite(col = "full_form", sep = " + ", remove = FALSE) %>%
+        mutate(full_form = ifelse(row_number() <= length(var_list) - 1,
+                                  str_extract(string = full_form,
+                                              pattern = "[a-z]+$"),
+                                  full_form))
+}
+
+odor %>% get_combns(hold_out_vars = c("odor", "temp"))
+
+teengamb %>% get_combns(hold_out_vars = c("gamble", "sex"))
+```
 
