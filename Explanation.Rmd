@@ -317,19 +317,33 @@ data(teengamb, package = "faraway")
 
 teengamb %<>% as_tibble()
 
-names(teengamb)
+get_combns <- function(data, holdout) {
+    # turn holdout into regex
+    remove_pattern <- holdout %>%
+        paste(collapse = "|")
 
-combns <- c("status", "income", "verbal",
-  "status + income", "status + verbal", "verbal + income",
-  "status + verbal + income")
+    # get number of predictors after accounting for holdout
+    npreds <- length(names(data)) - length(holdout)
 
-combns %<>%
-    map(., ~ lm(data = teengamb, as.formula(paste0("gamble ~ sex + ", .x))))
+    # create combinations
+    map(1:npreds, ~ names(data) %>%
+                        str_remove_all(., pattern = remove_pattern) %>%
+                        .[. != ""] %>%
+                        append("") %>%
+                        gtools::combinations(n = length(.),
+                                             r = (length(.) - .x),
+                                             repeats.allowed = FALSE) %>%
+                        as_tibble() %>% 
+                        unite(col = "form", sep = "+") %>%
+                        mutate(form = str_remove(form, "^[^A-Za-z]"))) %>%
+        bind_rows() %>%
+        distinct() %>%
+        slice(1:nrow(.) - 1) %>%
+        arrange(str_length(form)) %>%
+        flatten_chr()
+}
 
-combns[[8]] <- lm(gamble ~ sex, teengamb)
-
-combns %>% map(pluck())
-
+# grab the sex beta_hat predictor
 grab_beta_hat <- function(lm_out) {
     lm_out %>%
         tidy() %>%
@@ -337,9 +351,21 @@ grab_beta_hat <- function(lm_out) {
         pluck(2)
 }
 
-combns %>% map(grab_beta_hat) %>% flatten_dbl() %>% summary()
+# get lms
+tg_combns <- teengamb %>%
+    get_combns(holdout = c("gamble", "sex")) %>% 
+    map(., ~ lm(data = teengamb, as.formula(paste0("gamble ~ sex + ", .x))))
 
-combns %>% map(., ~ summary(.x) %>% tidy())
+tg_combns[[8]] <- lm(gamble ~ sex, teengamb)
+
+# redo Q1 
+s_betas <- teengamb %>%
+    get_combns(holdout = c("gamble", "sex")) %>%
+    map(., ~ lm(data = teengamb, as.formula(paste0("gamble ~ sex +", .x)))) %>%
+    map(., ~ grab_beta_hat(.x)) %>%
+    flatten_dbl()
+
+s_betas %>% summary()
 ```
 
 The beta hat values for sex seem to be relatively stable, with a range of about 14, and always consistently negative and large. 
@@ -349,58 +375,8 @@ The beta hat values for sex seem to be relatively stable, with a range of about 
 ```{r}
 data(odor, package = "faraway")
 
-names(odor) 
+odor %>% get_combns(holdout = c("odor", "temp")) %>% 
+    map(., ~ lm(data = odor, as.formula(paste0("odor ~ temp +", .x))))
 
-remove_strings <- c("odor", "temp")
-
-odor_components <- names(odor) %>%
-    str_remove_all(remove_strings) %>%
-    .[. != ""]
-
-components_size <- odor_components %>% append("") %>% length()
-
-library(gtools)
-
-odor_components %>% append("") %>% combinations(n = components_size, r = components_size - 1, repeats.allowed = FALSE)
-
-remove_pattern <- c("sex|gamble")
-
-names(teengamb) %>%
-    str_remove_all(., pattern = remove_pattern) %>%
-    .[. != ""] %>%
-    append("") %>%
-    combinations(n = length(.),
-                 r = length(.) - 1,
-                 repeats.allowed = FALSE)
-
-remove_strings %>% paste(collapse = "|")
-
-get_combns <- function(data, hold_out_vars) {
-    # turn list of strings into a regex
-    remove_pattern <- hold_out_vars %>% paste(collapse = "|")
-
-    # remove all the vars we wish to withold. Add "" for a space
-    names(data) %>%
-    str_remove_all(., pattern = remove_pattern) %>%
-    .[. != ""] %>%
-    append("") -> var_list
-    
-    # generate all the combinations
-    var_list %>%
-    combinations(n = length(var_list),
-                 r = length(var_list) - 1,
-                 repeats.allowed = FALSE) %>%
-        as_tibble() %>%
-        ## rowwise() %>% 
-        unite(col = "full_form", sep = " + ", remove = FALSE) %>%
-        mutate(full_form = ifelse(row_number() <= length(var_list) - 1,
-                                  str_extract(string = full_form,
-                                              pattern = "[a-z]+$"),
-                                  full_form))
-}
-
-odor %>% get_combns(hold_out_vars = c("odor", "temp"))
-
-teengamb %>% get_combns(hold_out_vars = c("gamble", "sex"))
 ```
 
