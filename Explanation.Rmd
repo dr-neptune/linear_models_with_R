@@ -354,7 +354,7 @@ grab_beta_hat <- function(lm_out) {
 # get lms
 tg_combns <- teengamb %>%
     get_combns(holdout = c("gamble", "sex")) %>% 
-    map(., ~ lm(data = teengamb, as.formula(paste0("gamble ~ sex + ", .x))))
+    map(., ~ lm(data = teengamb, as.formula(paste0("gamble ~ sex + ", .x)))) 
 
 tg_combns[[8]] <- lm(gamble ~ sex, teengamb)
 
@@ -376,7 +376,58 @@ The beta hat values for sex seem to be relatively stable, with a range of about 
 data(odor, package = "faraway")
 
 odor %>% get_combns(holdout = c("odor", "temp")) %>% 
-    map(., ~ lm(data = odor, as.formula(paste0("odor ~ temp +", .x))))
+    map(., ~ lm(data = odor, as.formula(paste0("odor ~ temp +", .x)))) %>%
+    map(., ~ .x %>% summary() %>% tidy() %>% slice(2)) %>%
+    bind_rows()
+```
+
+Through each of the models, the coefficient stays the same; the standard error changes slightly; the t-statistics and p-values are fairly consistent. Of these models, the only one that stands out is the third one as its std.error is lower indicating less uncertainty within its beta_hat estimate. 
+
+3. 
+
+```{r}
+# a 
+teengamb %>%
+    ggplot(aes(x = income, y = gamble, shape = factor(sex), color = factor(sex))) +
+    geom_point() +
+    labs(shape = "sex", color = "sex") -> base_plot
+
+base_plot
+
+# b
+(lmod <- lm(gamble ~ income + sex, teengamb))
+
+(lmod0 <- lm(gamble ~ income, teengamb %>% filter(sex == 0)))
+(lmod1 <- lm(gamble ~ income, teengamb %>% filter(sex == 1)))
+
+base_plot +
+    geom_abline(intercept = lmod0$coefficients[[1]], slope = lmod0$coefficients[[2]],
+                color = "red") +
+    geom_abline(intercept = lmod1$coefficients[[1]],
+                slope = lmod1$coefficients[[2]],
+                color = "blue")
+```
+
+```{r}
+# c
+library(Matching)
+
+set.seed(8888)
+
+teengamb %<>%
+    mutate(sex = ifelse(sex == 0, TRUE, FALSE))
+
+mm <- GenMatch(teengamb$sex, teengamb$gamble, ties = TRUE, pop.size = 1000)
+
+mmatch <- mm$matches[, 1:2]
+
+mmatch
+
+"dean_1" = newhamp$Dean[mmatch[,1]],
+                      "p_obama_1" = newhamp$pObama[mmatch[,1]],
+                      "dean_2" = newhamp$Dean[mmatch[,2]],
+                      "p_obama_2" = newhamp$pObama[mmatch[,2]]
 
 ```
+
 
