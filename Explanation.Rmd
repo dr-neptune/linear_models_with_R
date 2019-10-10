@@ -406,28 +406,60 @@ base_plot +
     geom_abline(intercept = lmod1$coefficients[[1]],
                 slope = lmod1$coefficients[[2]],
                 color = "blue")
+    
 ```
 
 ```{r}
 # c
 library(Matching)
-
 set.seed(8888)
 
+# change data type to use the evolutionary matching algo 
 teengamb %<>%
     mutate(sex = ifelse(sex == 0, TRUE, FALSE))
 
-mm <- GenMatch(teengamb$sex, teengamb$gamble, ties = TRUE, pop.size = 1000)
+# generate matches 
+mm <- GenMatch(Tr = teengamb$sex, X = teengamb$gamble, ties = TRUE, caliper = 0.05, pop.size = 1000)
 
-mmatch <- mm$matches[, 1:2]
+# show matches in context of the original data
+show_match <- function(data, matches) {
+    1:nrow(matches) %>%
+        map(., ~ matches %>%
+                   slice(.x) %>%
+                   flatten_dbl()) %>%
+        map(., ~ slice(.data = data, .[1], .[2]))
+}
 
-mmatch
+# get matches
+teen_matches <- teengamb %>% show_match(matches = mmatch)
 
-"dean_1" = newhamp$Dean[mmatch[,1]],
-                      "p_obama_1" = newhamp$pObama[mmatch[,1]],
-                      "dean_2" = newhamp$Dean[mmatch[,2]],
-                      "p_obama_2" = newhamp$pObama[mmatch[,2]]
+teen_matches
+``` 
 
+With a caliper value of 0.05, there were 36 matches. To see how many were not matched, we could calculate 47 * 47 - 47 - 36 = 2126.
+
+```{r}
+# d.
+teen_matches %<>%
+    bind_rows()
+
+## teen_matches %<>%
+##     mutate(s1 = ifelse(sex,
+##                        gamble,
+##                        NA),
+##            s2 = ifelse(!sex,
+##                        gamble,
+##                        NA))
+
+## teen_matches %>% 
+##     ggplot(aes(x = sex, y = gamble, color = sex)) +
+##     geom_point() +
+##     geom_segment(data = teen_matches,
+##                  aes(x = teen_matches$sex[[1]],
+##                      y = s1,
+##                      xend = teen_matches$sex[[2]],
+##                      yend = s2)) + 
+##     scale_color_brewer(palette = "Set2")
 ```
 
 
