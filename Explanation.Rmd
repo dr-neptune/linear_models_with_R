@@ -430,8 +430,10 @@ show_match <- function(data, matches) {
         map(., ~ slice(.data = data, .[1], .[2]))
 }
 
+mmatch <- mm$matches[,1:2] %>% as_tibble()
+
 # get matches
-teen_matches <- teengamb %>% show_match(matches = mmatch)
+teen_matches <- teengamb %>% show_match(matches = mmatch) %>% bind_rows()
 
 teen_matches
 ``` 
@@ -440,26 +442,56 @@ With a caliper value of 0.05, there were 36 matches. To see how many were not ma
 
 ```{r}
 # d.
-teen_matches %<>%
-    bind_rows()
+mmatch_out <- tibble("s_1" = teengamb$sex[mmatch$V1],
+                     "s_2" = teengamb$sex[mmatch$V2],
+                     "g_1" = teengamb$gamble[mmatch$V1],
+                     "g_2" = teengamb$gamble[mmatch$V2])
 
-## teen_matches %<>%
-##     mutate(s1 = ifelse(sex,
-##                        gamble,
-##                        NA),
-##            s2 = ifelse(!sex,
-##                        gamble,
-##                        NA))
 
-## teen_matches %>% 
-##     ggplot(aes(x = sex, y = gamble, color = sex)) +
-##     geom_point() +
-##     geom_segment(data = teen_matches,
-##                  aes(x = teen_matches$sex[[1]],
-##                      y = s1,
-##                      xend = teen_matches$sex[[2]],
-##                      yend = s2)) + 
-##     scale_color_brewer(palette = "Set2")
+teen_matches %>% 
+    ggplot(aes(x = sex, y = gamble)) +
+    geom_point(color = "mediumpurple") +
+    geom_segment(data = mmatch_out,
+                 aes(x = s_1,
+                     y = g_1,
+                     xend = s_2,
+                     yend = g_2),
+                 alpha = 0.2) + 
+    scale_color_brewer(palette = "Set2")
 ```
 
+```{r}
+# e
 
+mmatch_out %<>%
+    mutate(diff = abs(g_1 - g_2))
+
+mmatch_out %>% 
+    ggplot(aes(x = diff)) +
+    geom_density(fill = "mediumpurple")
+```
+
+There is not a significant nonzero difference.
+
+```{r}
+# The range of all gamble values is 
+teengamb$gamble %>% summary()
+
+# with a standard deviation of 
+teengamb$gamble %>% sd()
+```
+
+Comparatively, even the largest difference of 
+
+```{r}
+mmatch_out$diff %>% max()
+```
+
+is pretty small. 
+
+```{r}
+# f
+teen_matches %>%
+    ggplot(aes(x = sex, y = income))
+
+```
