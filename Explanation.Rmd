@@ -445,8 +445,9 @@ With a caliper value of 0.05, there were 36 matches. To see how many were not ma
 mmatch_out <- tibble("s_1" = teengamb$sex[mmatch$V1],
                      "s_2" = teengamb$sex[mmatch$V2],
                      "g_1" = teengamb$gamble[mmatch$V1],
-                     "g_2" = teengamb$gamble[mmatch$V2])
-
+                     "g_2" = teengamb$gamble[mmatch$V2],
+                     "i_1" = teengamb$income[mmatch$V1],
+                     "i_2" = teengamb$income[mmatch$V2])
 
 teen_matches %>% 
     ggplot(aes(x = sex, y = gamble)) +
@@ -468,7 +469,16 @@ mmatch_out %<>%
 
 mmatch_out %>% 
     ggplot(aes(x = diff)) +
-    geom_density(fill = "mediumpurple")
+    geom_density(fill = "mediumpurple") +
+    ggtitle("Match Difference in Gamble")-> p1
+
+mmatch_out %>% 
+    ggplot(aes(x = diff)) +
+    geom_density(fill = "mediumpurple") +
+    xlim(c(0, 156)) + 
+    ggtitle("Match Difference in Gamble | Overall")-> p2
+
+cowplot::plot_grid(p1, p2, ncol = 2)
 ```
 
 There is not a significant nonzero difference.
@@ -491,7 +501,146 @@ is pretty small.
 
 ```{r}
 # f
-teen_matches %>%
-    ggplot(aes(x = sex, y = income))
+mmatch_out %<>%
+    mutate(inc = ifelse(i_1 > i_2, "green", "blue"),
+           gamb = ifelse(g_1 > g_2, "green", "blue"))
 
+teen_matches %>%
+    ggplot(aes(x = sex, y = income)) +
+    geom_point(color = "mediumpurple") +
+    geom_segment(data = mmatch_out,
+                 aes(x = s_1,
+                     y = i_1,
+                     xend = s_2,
+                     yend = i_2),
+                 alpha = 0.2,
+                 color = mmatch_out$gamb) +
+    ggtitle("Sex ~ Income | Matched",
+            subtitle = "Green : F > M\tBlue : M > F") +
+    scale_x_discrete(labels = c("Male", "Female"))
+
+mmatch_out$gamb %>%
+    janitor::tabyl()
 ```
+
+The conclusions from the linear model and the paired approach disagree. **I'm pretty certain I did this incorrectly though.**
+
+4. 
+
+```{r}
+data(happy, package = "faraway")
+
+happy %<>% as_tibble()
+
+(lmod <- lm(happy ~ ., happy))
+
+lmod %>% summary()
+```
+
+
+In this case, the love coefficient is essentially saying that with respect to money, sex, and work, one extra increase in the factor level of the love variable (out of 3) leads to an increase in the happiness score by ~1.9. This implies that a love score of 3 has approximately a 5.7 point effect out of 10. 
+
+```{r}
+# b.
+happy %<>%
+    mutate(clove = ifelse(love < 3,
+                          0,
+                          1))
+
+(lmod2 <- lm(happy ~ money + sex + clove + work, happy))
+
+lmod2 %>% summary()
+```
+ 
+If we collapse the love factor levels down to a 0/1 indicator (with 1,2 == 0, 3 == 1), then our beta_hat value for clove is only 2.29. This is still a large coefficient, but it does not capture the magnitude of the 5.7 point effect of the first love coefficient. 
+
+```{r}
+# c.
+(lmod3 <- lm(happy ~ clove, happy))
+
+lmod3 %>% summary()
+```
+
+In this case, with clove as the only indicator, we have a baseline happiness of 5.27 and having strong love in ones life increases the happiness value by 2.72. These results are somewhat close to the last model. 
+
+```{r}
+# d.
+(lmod_w1 <- lm(happy ~ work, happy %>%
+             filter(clove == 0)))
+
+(lmod_w2 <- lm(happy ~ work, happy %>%
+             filter(clove == 1)))
+
+happy %>%
+    ggplot(aes(y = happy, x = work, shape = factor(clove),
+               color = factor(clove))) +
+    geom_point() +
+    geom_jitter() +
+    geom_abline(intercept = lmod_w1$coefficients[[1]],
+                slope = lmod_w1$coefficients[[2]],
+                color = "red",
+                alpha = 0.3) +
+    geom_abline(intercept = lmod_w2$coefficients[[1]],
+                slope = lmod_w2$coefficients[[2]],
+                color = "blue",
+                alpha = 0.3)
+```
+
+```{r}
+# e.
+
+xtabs(~ clove + work, happy)
+```
+
+If we wanted to match pairs on clove with the same value of work, what is the maximum number of 1 to 1 matches we could achieve? 
+
+For work = 1, we only have one pair to match. 
+For work = 2, we only have 1 pair we could match. 
+For work = 3, we have 5 possible pairs to match. 
+For work = 4, we have a max of 7 possible matches.
+For work = 5, we can not have a match. 
+
+Therefore, the maximum number of 1 to 1 matches is 14. 
+
+```{r}
+# f.
+
+happy %>%
+    group_by(work, clove) %>%
+    mutate(h_diff_c1 = ifelse(clove == 1,
+                              happy,
+                              0),
+           h_diff_c0 = ifelse(clove == 0,
+                              happy,
+                              0)) %>%
+    summarize(diff = mean(h_diff_c1 - h_diff_c0), ) -> clove_diff
+
+clove_diff$diff %>% plot()
+
+clove_diff$diff %>% mean()
+```
+
+Based on the mean value above, lmod2 containing all the predictors with clove swapped for love, would be the closest to this value. However, this value is weird since the difference with clove = 0 and clove = 1 is so stark.
+
+For example: 
+
+```{r}
+clove_diff %>%
+    filter(clove == 0) -> c0
+
+clove_diff %>%
+    filter(clove == 1) -> c1
+
+clove_diff %>%
+    ggplot(aes(x = 1:5, y = -10:10)) +
+    geom_line(data = c0, aes(x = work, y = diff),
+              color = "red") +
+    geom_line(data = c1, aes(x = work, y = diff),
+              color = "blue") +
+    geom_hline(yintercept = 2.11342, lty = 2, alpha = 0.5) + 
+    xlab("work") + ylab("happiness") +
+    ggtitle("Happiness ~ Work by cLove",
+            subtitle =
+                "Blue : clove == 1  |  Red : clove == 0  |  Grey : Overall Mean")
+```
+
