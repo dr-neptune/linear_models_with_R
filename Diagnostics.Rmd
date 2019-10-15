@@ -1,0 +1,147 @@
+
+```{r}
+library(tidyverse)
+library(faraway)
+library(magrittr)
+library(broom)
+library(gganimate)
+```
+
+# Diagnostics 
+
+The estimation of and inference from the regression model depend on several assumptions. These assumptions should be checked using regression diagnostics before using the model in earnest. 
+
+We can divide the problems into three categories: 
+
+**Error** : we have assumed that our errors are independent, have equal variance, and are normally distributed. 
+
+**Model** : we have assumed that the structural part of the model, $E[y] = X\beta$, is correct. 
+
+**Unusual Observations** : Sometimes a few observations do not fit the model and they might change the choice and fit of the model. 
+
+# Checking Error Assumptions
+
+We wish to check for independence, constant variance, and normality of the errors. We can examine the residuals, $\hat{\epsilon}$.
+
+Recall that $\hat{y} = X(X^TX)^{-1}XTy = Hy$ where $H$ is the hat matrix, so that 
+
+<center>
+$\hat{\epsilon} = y - \hat{y} = (I - H)y = (I - H)X\beta + (I - H)\epsilon = (I - H)\epsilon$
+</center>
+
+Therefore, var $\hat{\epsilon}$ = var $(I - H)\epsilon$ = $(I - H)\sigma^2$ assuming var ${\epsilon} = \sigma^2 I$. 
+
+We see that while the errors may have equal variance and be uncorrelated, the residuals do not. Fortuneately, correlation of errors usually has little imact and can be applied to residuals in order to check the assumptions on the error. 
+
+## Constant Variance 
+
+We can not check the assumption of constant variance just by examining the residuals alone. We need to check whether the variance in the residuals is related to some other quantity. 
+
+The most useful diagnostic is a plot of $\hat{\epsilon}$ against $\hat{y}$, or residuals against fitted. If all is well, we should see constant symmetrical variation (known as homoscedasticity) in the vertical $\hat{\epsilon}$ direction. **Nonconstant** variance is called heterscedasticity. Nonlinearity of the structural part of the model can also be detected in this plot. 
+
+It is also worthwhile to plot $\hat{\epsilon}$ against $x_i$ for potential predictors that are in the current model as well as those that are not used. For plots of residuals against predictors that are not in the model, any observed structure may indicate that this predictor should be included in the model. 
+
+```{r}
+data(savings, package = "faraway")
+savings %<>% as_tibble()
+
+(lmod <- lm(sr ~ ., savings))
+
+lm_aug <- lmod %>% augment()
+
+diag_plot <- function(data, x, y) {
+    data %>%
+        ggplot(aes(x = {{x}}, y = {{y}})) +
+        geom_point() +
+        geom_hline(yintercept = 0, lty = 2, alpha = 0.5)
+}
+
+lm_aug %>%
+    diag_plot(x = .fitted, y = .resid)
+```
+
+The plot above shows that there likely no heteroscedasticity, or nonconstant variance in the error. We can examine the constant variance more closely by plotting $\sqrt{|\hat{\epsilon}|}$ against $\hat{y}$. Considering the absolute value of the residuals roughly doubles the resolution. For truly normal errors, $|\hat{\epsilon}|$ would follow what is known as a half normal distribution (since it has a density which is simply the upper half of a normal density). Such a distribution is quite skewed, and the skewness can be reduced by the square root transformation.
+
+```{r}
+lm_aug %>%
+    diag_plot(x = .fitted, y = sqrt(abs(.resid)))
+```
+
+We see approximately constant variation in the plot above. 
+
+We can also perform a numerical test to check nonconstant variance
+
+```{r}
+lm(sqrt(abs(.resid)) ~ .fitted, lm_aug) %>% summary()
+```
+
+This test checks for a linear trend in the variation. As a result, it might be good at detecting a particular kind of nonconstant variance, but have no power to detect another (think Simpson's paradox). Residual plots are generally more versatile here because unanticipated problems may be spotted.
+
+It is often hard to judge residual plots. Here are four plots which show:
+
+1. Constant Variance 
+2. Strong Nonconstant Variance 
+3. Mild Nonconstant Variance 
+4. Nonlinearity 
+
+```{r}
+map(seq_len(10), ~ tibble("x" = runif(100),
+                          "a" = rnorm(100),
+                          "b" = x * rnorm(100),
+                          "c" = sqrt(x) * rnorm(100),
+                          "d" = cos(x * pi / 25) + rnorm(100, sd = 1),
+                          "gen_group" = .x)) %>%
+    bind_rows() -> resid_gen
+
+animate_resids <- function(data, x, y, title) {
+    data %>%
+        diag_plot(x = {{x}}, y = {{y}}) +
+        ggtitle(as.character(title)) +
+        transition_states(
+            gen_group,
+            transition_length = 10,
+            state_length = 1) +
+        enter_fade() +
+        exit_shrink()
+}
+
+resid_gen %>%
+    animate_resids(x = x, y = a, title = "Constant Variance") -> p1g
+
+resid_gen %>%
+    diag_plot(x, a) +
+    ggtitle("Constant Variance") -> p1
+
+resid_gen %>%
+    animate_resids(x = x, y = b, title = "Strong Nonconstant Variance") -> p2g
+
+resid_gen %>%
+    diag_plot(x, b) +
+    ggtitle("Strong Nonconstant Variance") -> p2
+
+resid_gen %>%
+    animate_resids(x = x, y = c, title = "Mild Nonconstant Variance") -> p3g
+
+resid_gen %>%
+    diag_plot(x, c) +
+    ggtitle("Mild Nonconstant Variance") -> p3
+
+resid_gen %>%
+    animate_resids(x = x, y = d, title = "Nonlinearity") -> p4g
+
+resid_gen %>%
+    diag_plot(x, d) +
+    ggtitle("Nonlinearity") -> p4
+
+cowplot::plot_grid(p1, p2, p3, p4, ncol = 2)
+
+anim_save(filename = "anim_1.gif", animation = p1g)
+
+list("constant_var" = p1g, "strong_nonconstant_var" = p2g,
+     "mild_nonconstant_var" = p3g, "nonlinearity" = p4g) %>%
+    imap(., ~ anim_save(path = getwd(),
+                       filename = paste0(.y, ".gif"),
+                       animation = .x))
+```
+
+
