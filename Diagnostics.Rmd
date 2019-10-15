@@ -144,4 +144,14 @@ list("constant_var" = p1g, "strong_nonconstant_var" = p2g,
                        animation = .x))
 ```
 
+Now we can look at some residuals against predictor plots for the savings data 
+
+```{r}
+resid_plots <- with(lm_aug, list("pop15" = pop15, "pop75" = pop75,
+                  "dpi" = dpi, "ddpi" = ddpi)) %>%
+    imap(., ~ lm_aug %>% diag_plot(x = .x, y = .resid) +
+        xlab(.y) + ylab("residuals"))
+
+cowplot::plot_grid(plotlist = resid_plots, ncol = 2)
+```
 
