@@ -210,3 +210,79 @@ cowplot::plot_grid(p1, p2, ncol = 2)
 
 # Normality 
 
+The tests and confidence intervals we use are based on the assumption of normally distributed errors. The residuals can be assessed for normality using a QQ plot. This compares the residuals to ideal normal observations. 
+
+```{r}
+lmod <- lm(sr ~ pop15 + pop75 + dpi + ddpi, savings)
+
+lmod %>%
+    augment() %>%
+    ggplot(aes(sample = .resid)) +
+    stat_qq() +
+    stat_qq_line() -> p1
+
+lmod %>%
+    augment() %>%
+    ggplot(aes(x = .resid)) +
+    geom_histogram(bins = 30, fill = "skyblue", color = "black") -> p2
+
+cowplot::plot_grid(p1, p2, ncol = 1)
+```
+
+Normal residuals should follow the line approximately. The histogram should be the familiar bell shape. 
+
+We can get an idea of the variation to be expected in QQ plots in the following simulation. We generate data from different distributions:
+
+1. Normal 
+2. Log-Normal (an example of a skewed distribution)
+3. Cauchy (an example of a long tailed (leptokurtic) distribution)
+4. Uniform (an example of a short tailed (platykurtic) distribution)
+
+```{r}
+map(seq_len(10), ~ tibble("x" = rnorm(100),
+                          "a" = rnorm(100),
+                          "b" = exp(rnorm(100)),
+                          "c" = rcauchy(100),
+                          "d" = runif(100),
+                          "gen_group" = .x)) %>%
+    bind_rows() -> resid_gen
+
+qq_plot <- function(data, choice, title) {
+    data %>%
+        ggplot(aes(sample = {{choice}})) +
+        stat_qq() +
+        stat_qq_line() +
+        ggtitle(title)
+}
+
+qq_plots <- with(resid_gen, list("Normal" = a,
+                                 "Log-Normal | Skewed" = b,
+                                 "Cauchy | Long-Tail" = c,
+                                 "Uniform | Short-Tail" = d)) %>%
+    imap(., ~ resid_gen %>%
+         qq_plot(choice = .x, title = .y))
+
+cowplot::plot_grid(plotlist = qq_plots, ncol = 2)
+```
+
+
+Sometimes extreme cases may be the sign of a long tailed error like the Cauchy distribution, or they can just be outliers. If removing outliers results in other points becoming more prominent in the plot, the problem is likely due to a long tail error.
+
+When the errors are not normal, least squares estimates may not be optimal. They will still be the best linear unbiased estimates, but other robust estimators may be more effective. Tests and confidence intervals will not be exact, but we can still appeal to the central limit theorem to assert that intervals constructed will be increasingly accurate approximations for larger sample sizes. 
+
+When non-normality is found, the resolution depends on the type of problem found:
+
+- Short tailed distributions are not serious usually and can generally be ignored 
+- Skewed errors may be ameliorated by a transformation 
+- Long tailed errors may require us accepting non-normality and basing the inference on the assumption of another distribution or use resampling methods like the bootstrap or permutation tests. Alternatively, we can use robust methods which lend less weight to outliers but may again require resampling for the inference. 
+
+A formal test for normality is the Shapiro-Wilk test:
+
+```{r}
+shapiro.test(residuals(lmod))
+```
+
+In this test, the null hypothesis is that the residuals are normal. In our case, we have a p-value of 0.8524 and thus we do not reject the null hypothesis. The p-value is not helpful as an indicator of what action to take, so it is reccommended to use this in conjunction with a QQ plot. 
+
+# Correlated Errors
+
