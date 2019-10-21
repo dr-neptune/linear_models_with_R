@@ -89,7 +89,8 @@ map(seq_len(10), ~ tibble("x" = runif(100),
                           "a" = rnorm(100),
                           "b" = x * rnorm(100),
                           "c" = sqrt(x) * rnorm(100),
-                          "d" = cos(x * pi / 25) + rnorm(100, sd = 1),
+                          "d" = cos(x * pi / 25) +
+                              rcauchy(n = 100, location = 5, scale = 5),
                           "gen_group" = .x)) %>%
     bind_rows() -> resid_gen
 
@@ -135,8 +136,6 @@ resid_gen %>%
 
 cowplot::plot_grid(p1, p2, p3, p4, ncol = 2)
 
-anim_save(filename = "anim_1.gif", animation = p1g)
-
 list("constant_var" = p1g, "strong_nonconstant_var" = p2g,
      "mild_nonconstant_var" = p3g, "nonlinearity" = p4g) %>%
     imap(., ~ anim_save(path = getwd(),
@@ -154,4 +153,60 @@ resid_plots <- with(lm_aug, list("pop15" = pop15, "pop75" = pop75,
 
 cowplot::plot_grid(plotlist = resid_plots, ncol = 2)
 ```
+
+In the first plot, for population under 15, we can see two groups. We can compare and test the variances in these groups. 
+
+Given two independent samples from normal distributions, we can test for equal variance using the test statistic of the ratio of the two variances. The null distribution is an F with degrees of freedom given by the two samples
+
+```{r}
+var.test(lm_aug$.resid[lm_aug$pop15 > 35], lm_aug$.resid[lm_aug$pop15 <= 35])
+```
+
+We see that there is a significant difference with our p-value of 0.01358 and we fail to reject our alternative hypothesis that the true ratio of variances is not equal to 1. 
+
+When problems are seen in the diagnostic plots, some modification of the model is suggested. 
+
+- If some nonlinearity is observed, perhaps in conjunction with nonconstant variance, a transformation of the variables should be considered. 
+
+- If the problem is solely one of nonconstant variance with no suggestion of nonlinearity, then the use of weighted least squares may be appropriate.
+
+Alternatively, when non constant variance is seen in the plot of the residuals against fitted values, a transformation of the response y to h(y) where h() can be chosen so that var h(y) is constant should be considered. 
+
+To see how to choose h: 
+
+$h(y) = h(Ey) + (y - Ey)h'(Ey) + ...$
+$var h(y) = 0 + h'(Ey)^2 var y + ...$
+$h'(Ey) \propto (var y)^{-1/2}$
+$h(y) = \int \frac{dy}{\sqrt{var y}} = \int \frac{dy}{SD(y)}$
+
+For example, if $var y = var \epsilon \propto (Ey)^2$, then $h(y) = \log y$ is suggested, while if $var \epsilon \propto (Ey)$, then $h(y) = \sqrt{y}$
+
+Sometimes it can be difficult to find a good transformation. For example when $y_i \leq 0$ for some $i$, square root or log transformations will fail. 
+
+Consider the residuals vs fitted plot for the Galapagos data:
+
+```{r}
+data(gala, package = "faraway")
+lmod <- lm(Species ~ Area + Elevation + Scruz + Nearest + Adjacent, gala)
+
+(lmod %>% augment() %>%
+    diag_plot(x = .fitted, y = .resid) -> p1)
+```
+
+The first plot has non constant variance (and evidence of nonlinearity). The square root transformation is often appropriate for count response data. The Poisson distribution is a good model for counts and that distribution has the property that the mean is equal to the variance, thus suggesting the square root transformation. 
+
+```{r}
+lmod <- lm(sqrt(Species) ~ Area + Elevation + Scruz + Nearest + Adjacent, gala)
+
+(lmod %>% augment %>%
+    diag_plot(x = .fitted, y = .resid) -> p2)
+```
+
+We see in the second plot that the variance is now constant and the signs of nonlinearity have gone. Our guess at a variance stabilizing transformation worked here, but we could have always tried something else 
+
+```{r}
+cowplot::plot_grid(p1, p2, ncol = 2)
+```
+
+# Normality 
 
