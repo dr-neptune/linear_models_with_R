@@ -286,3 +286,99 @@ In this test, the null hypothesis is that the residuals are normal. In our case,
 
 # Correlated Errors
 
+It is difficult to check for correlated errors in general because there are too many possible patterns of correlation that may occur. Some types of data have a structure which suggests where to look for problems. 
+
+- Data collected over time may have some correlation in successive errors 
+- Spatial data may have correlation in the errors of nearby measurements 
+- Data collected in blocks may show correlated errors within those blocks
+
+We can illustrate the methods with a time series analysis, but we will use methods more specific to the regression diagnostics problem. 
+
+```{r}
+data(globwarm, package = "faraway")
+globwarm %<>% as_tibble()
+
+# fit model
+(lmod <- lm(nhtemp ~ ., globwarm))
+
+# grab augment df
+lm_aug <- lmod %>% augment()
+```
+
+For temporal data like these, it is sensible to plot the residuals against the time index. 
+
+```{r}
+make_convex_hull <- function(data, x, y,
+                      plot = TRUE,
+                      alpha = 0.3,
+                      fill = "cadetblue1",
+                      color = "black") {
+    hull <- data %>%
+        slice(chull({{x}}, {{y}}))
+
+    if (plot) {
+        geom_polygon(data = hull,
+                     alpha = alpha,
+                     fill = fill,
+                     color = color)
+    } else {
+        hull
+    }
+}
+
+lm_aug %>%
+    na.omit() %>%
+    ggplot(aes(x = year, y = .resid)) +
+    geom_point() +
+    geom_hline(yintercept = 0, lty = 2) +
+    make_convex_hull(data = lm_aug,
+                     x = year, y = .resid) +
+    ggalt::geom_xspline(alpha = 0.3)
+```
+
+If the errors were uncorrelated, we would expect a random scatter of points above and below the epsilon = 0 line. This looks like a time series pattern, so we have an indicator of positive serial correlation.
+
+Another way to approach checking for serial correlation is to plot successive pairs of residuals
+
+```{r}
+
+n <- length(residuals(lmod))
+plot(tail(residuals(lmod), n - 1) ~ head(residuals(lmod), n - 1),
+     xlab = expression(hat(epsilon)[i]),
+     ylab = expression(hat(epsilon)[i + 1]))
+abline(h = 0, v = 0, col = grey(0.75))
+
+lm_aug %>% nrow()
+
+
+lm_aug %>%
+    mutate(lead = .resid[2:nrow(.)] %>% append(0),
+           lag = .resid[1:(nrow(.) - 1)] %>% append(0))
+
+make_successive_res_plot <- function(data) {
+    # get data length
+    n <- data %>% nrow()
+
+    # add lead lag
+    data %<>%
+    mutate(lead = .resid[2:nrow(.)] %>% append(0),
+           lag = .resid[1:(nrow(.) - 1)] %>% append(0))
+
+    # fit slope
+    lm_in <- lm(lead ~ lag, data)
+
+    data %>%
+        ggplot(aes(x = lead, y = lag)) +
+        geom_point() +
+        geom_hline(yintercept = 0, lty = 2, alpha = 0.3) +
+        geom_vline(xintercept = 0, lty = 2, alpha = 0.3) +
+        geom_abline(slope = lm_in$coefficients[[2]],
+                    intercept = lm_in$coefficients[[1]],
+                    color = "blue",
+                    alpha = 0.3)
+}
+
+lm_aug %>%
+    make_successive_res_plot()
+```
+
