@@ -326,14 +326,14 @@ make_convex_hull <- function(data, x, y,
     }
 }
 
-lm_aug %>%
+(lm_aug %>%
     na.omit() %>%
     ggplot(aes(x = year, y = .resid)) +
     geom_point() +
     geom_hline(yintercept = 0, lty = 2) +
     make_convex_hull(data = lm_aug,
                      x = year, y = .resid) +
-    ggalt::geom_xspline(alpha = 0.3)
+    ggalt::geom_xspline(alpha = 0.3) -> p1)
 ```
 
 If the errors were uncorrelated, we would expect a random scatter of points above and below the epsilon = 0 line. This looks like a time series pattern, so we have an indicator of positive serial correlation.
@@ -349,11 +349,6 @@ plot(tail(residuals(lmod), n - 1) ~ head(residuals(lmod), n - 1),
 abline(h = 0, v = 0, col = grey(0.75))
 
 lm_aug %>% nrow()
-
-
-lm_aug %>%
-    mutate(lead = .resid[2:nrow(.)] %>% append(0),
-           lag = .resid[1:(nrow(.) - 1)] %>% append(0))
 
 make_successive_res_plot <- function(data) {
     # get data length
@@ -378,7 +373,93 @@ make_successive_res_plot <- function(data) {
                     alpha = 0.3)
 }
 
-lm_aug %>%
-    make_successive_res_plot()
+(lm_aug %>%
+    make_successive_res_plot() -> p2)
+
+cowplot::plot_grid(p1, p2, ncol = 2)
 ```
+We can also model the significance of the correlation directly
+
+```{r}
+lm_aug %<>%
+    mutate(lead = .resid[2:nrow(.)] %>% append(0),
+           lag = .resid[1:(nrow(.) - 1)] %>% append(0))
+
+lm(lead ~ lag -1, lm_aug) %>% summary()
+```
+
+We omitted the intercept because the residuals have mean zero. The serial correlation is confirmed, as the estimate is nonzero and the p-value is very small. 
+
+We can also plot more than just successive pairs if we suspect a more complex dependence. 
+
+The Durbin-Watson test uses the statistic 
+
+$DW = \frac{\sum_{i=2}^n (\hat{\epsilon_i} - \hat{\epsilon_{j-1}})^2}{\sum_{i = 1}^n \hat{\epsilon_i}^2}$
+
+It essentially looks at the successive residuals, squares them, and normalizes their sum by the sum of squared residuals.
+
+The null hypothesis is that the errors are uncorrelated. The null distribution based on the assumption of uncorrelated errors follows a linear combination of Chi Squared distributions. 
+
+```{r}
+# run Durbin-Watson statistic
+lmtest::dwtest(nhtemp ~ wusa + jasper + westgreen +
+                   chesapeake + tornetrask + urals +
+                   mongolia + tasman, data = globwarm)
+```
+
+In this case the null hypothesis is that the true autocorrelation is zero, and the alternative hypothesis is that the true autocorrelation is greater than zero. Our p-value is really small (1.402 * 10^-15), so we can reject the null hypothesis and assert that we have autocorrelation. 
+
+Sometimes serial correlations can be caused by a missing covariate. Although it is possible that difficulties with correlated errors can be removed by changing the structural part of the model, sometimes we must build the correlation directly into the model. This can be achieved with the method of generalized least squares.
+
+# Finding Unusual Observations
+
+Outliers do not fit the model well. Influential observations can change the fit of a model in a substantive manner. A leverage point is extreme in the predictor space. It is important to identify such points.
+
+# Leverage 
+
+$h_i = H_{ii}$ are called leverages and are useful diagnostics. Since var $\hat{\epsilon_i} = \sigma^2(1 - h_i)$, a large leverage $h_i$ will make the var $\hat{\epsilon_i}$ small. The fit will be attracted toward $y_i$. Large values of $h_i$ are due to extreme values in the X space. $h_i$ corresponds to a squared Mahalonobis distance defined by X which is $(x - \bar{x})^T \hat{\Sigma}^{-1}(x - \bar{x})$ where $\hat{\Sigma}$ is the estimated covariance of X. The value of $h_i$ depends only on X and not y, so leverages contain only partial information about a case. 
+
+Since $\sum_i h_i = p$, an average value for $h_i$ is $p/n$. A rough rule is that leverages of more than $2p / n$ should be looked at more closely. 
+
+```{r}
+lmod <- lm(sr ~ pop15 + pop75 + dpi + ddpi, savings)
+
+lm_aug <- lmod %>% augment()
+lm_aug %>% select(1:5, .hat)
+
+lm_aug %>% select(.hat) %>% summarize("sum of leverages" = sum(.))
+```
+
+We verify that the sum of the leverages is 5, the number of parameters in the model. Without making assumptions about the distributions of the predictors that would often be unreasonable, we cannot say how the leverages would be distributed. 
+
+In order to identify unusually large values of the leverage, we can use the half-normal plot. These are designed for the assessment of positive data. 
+
+The idea is to plot the data against the positive normal quantiles.
+
+1. Sort the data $x_{[1]} \leq ... \leq x_{[n]}$ 
+2. Compute $u_i = /Phi^{-1}(\frac{n + i}{2n + 1})$
+3. Plot $x_{[i]} ahainst u_i$
+
+We do not expect a straight line relationship since we do not necessarily expect a positive normal distribution for quantities like leverages. We are mainly looking for outliers that stand out. 
+
+```{r}
+countries <- row.names(savings)
+gghalfnorm::gghalfnorm(lm_aug$.hat, labs = countries, ylab = "leverages")
+```
+
+Leverages can also be used in scaling residuals. We have var $\hat{\epsilon_i} = \sigma^2(1 - h_i)$ which suggests the use of $r_i = \frac{\hat{\epsilon_i}}{\hat{\sigma} \sqrt{1 - h_i}}$.
+
+These are called standardized residuals. If the model assumptions are correct, var $r_i$ = 1 and corr($r_i, r_j$) tends to be small. Standardized residuals have equal variance. 
+
+Standardization can only correct for the natural non constant variance in residuals when the errors have constant variance. If there is some underlying heteroscedasticity in the errors, standardization cannot correct for it. 
+
+```{r}
+lm_aug %>%
+    qq_plot(choice = .std.resid, title = "Standardized Residuals")
+```
+
+Since the residuals have been standardized, we expect the points to approximately follow the y = x line if normality holds. An advantage of the standardized form is that we can judge the size easily. An absolute value of 2 would be large, but not exceptional for a standardized residual, whereas an absolute value of 4 would be very unusual under the standard normal. 
+
+# Outliers 
+
 
