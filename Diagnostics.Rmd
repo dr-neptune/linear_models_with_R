@@ -1,10 +1,11 @@
-
 ```{r}
 library(tidyverse)
 library(faraway)
 library(magrittr)
 library(broom)
 library(gganimate)
+library(furrr)
+plan(multiprocess)
 ```
 
 # Diagnostics 
@@ -341,7 +342,6 @@ If the errors were uncorrelated, we would expect a random scatter of points abov
 Another way to approach checking for serial correlation is to plot successive pairs of residuals
 
 ```{r}
-
 n <- length(residuals(lmod))
 plot(tail(residuals(lmod), n - 1) ~ head(residuals(lmod), n - 1),
      xlab = expression(hat(epsilon)[i]),
@@ -417,7 +417,7 @@ Outliers do not fit the model well. Influential observations can change the fit 
 
 # Leverage 
 
-$h_i = H_{ii}$ are called leverages and are useful diagnostics. Since var $\hat{\epsilon_i} = \sigma^2(1 - h_i)$, a large leverage $h_i$ will make the var $\hat{\epsilon_i}$ small. The fit will be attracted toward $y_i$. Large values of $h_i$ are due to extreme values in the X space. $h_i$ corresponds to a squared Mahalonobis distance defined by X which is $(x - \bar{x})^T \hat{\Sigma}^{-1}(x - \bar{x})$ where $\hat{\Sigma}$ is the estimated covariance of X. The value of $h_i$ depends only on X and not y, so leverages contain only partial information about a case. 
+$h_i = H_{ii}$ are called leverages and are useful diagnostics. Since var $\hat{\epsilon_i} = \sigma^2(1 - h_i)$, a large leverage $h_i\$ will make the var $\hat{\epsilon_i}$ small. The fit will be attracted toward $y_i\$. Large values of $h_i$ are due to extreme values in the X space. $h_i\$ corresponds to a squared Mahalonobis distance defined by X which is $(x - \bar{x})^T \hat{\Sigma}^{-1}(x - \bar{x})$ where $\hat{\Sigma}\$ is the estimated covariance of X. The value of $h_i$ depends only on X and not y, so leverages contain only partial information about a case. 
 
 Since $\sum_i h_i = p$, an average value for $h_i$ is $p/n$. A rough rule is that leverages of more than $2p / n$ should be looked at more closely. 
 
@@ -462,4 +462,137 @@ Since the residuals have been standardized, we expect the points to approximatel
 
 # Outliers 
 
+An outlier test is useful because it enables us to distinguish between truly unusual observations and residuals that are large, but not exceptional. 
+
+```{r}
+set.seed(8888)
+
+testdata <- tibble(x = 1:10,
+                   y = 1:10 + rnorm(10)) %>%
+    add_row(x = 5.5, y = 12)
+
+(lmod <- lm(y ~ x, testdata[1:10,]))
+(lmod1 <- lm(y ~ x, testdata))
+
+# the first example adds an outlier with a central predictor value
+plot(y ~ x, rbind(testdata, p1))
+points(5.5, 12, pch = 4, cex = 2)
+abline(lmod)
+abline(lmod1, lty = 2)
+
+
+x_55 <- (predict(lmod1, tibble(x = 5.5, y = NA)) - lmod$coefficients[[1]]) / lmod$coefficients[[2]]
+
+testdata %>%
+    ggplot(aes(x = x, y = y)) +
+    geom_point() +
+    geom_point(data = tibble(x = c(5.5, 5.5), y = c(12,
+                                                    predict(lmod1, newdata = tibble(x = 5.5, y = NA)))),
+               aes(x = x, y = y), color = "mediumpurple", shape = 13, size = 5) +
+    geom_segment(aes(x = 5.5,
+                     y = 12,
+                     xend = 5.5,
+                     yend = predict(lmod1, newdata = tibble(x = 5.5, y = NA))),
+                 lty = 2, alpha = 0.5, color = "firebrick1") +
+    geom_segment(aes(x = 5.5,
+                     y = predict(lmod, newdata = tibble(x = 5.5, y = NA)),
+                     xend = 5.5,
+                     yend = predict(lmod1, newdata = tibble(x = 5.5, y = NA))),
+                 lty = 2, alpha = 0.5, color = "skyblue") +
+    geom_segment(aes(x = 5.5,
+                     y = predict(lmod1, tibble(x = 5.5, y = NA)),
+                     xend = x_55,
+                     yend = predict(lmod1, tibble(x = 5.5, y = NA))),
+                 lty = 2, alpha = 0.5, color = "orange") +
+    geom_abline(intercept = lmod$coefficients[[1]],
+                slope = lmod$coefficients[[2]]) +
+    geom_abline(intercept = lmod1$coefficients[[1]],
+                slope = lmod1$coefficients[[2]],
+                lty = 2) +
+    ggtitle("Leverage Difference in Linear Model")
+
+leverage_plot <- function(data, x, y, levg_x, levg_y,
+                   colors = c("mediumpurple", "firebrick1",
+                              "skyblue", "orange")) {
+    set.seed(8888)
+    pred_tib <- tibble(x = levg_x, y = NA)
+
+    data %<>%
+        add_row(x = levg_x, y = levg_y)
+
+    (lm_1 <- lm(y ~ x, data[1:(nrow(data) - 1), ]))
+    (lm_2 <- lm(y ~ x, data))
+
+    data %>%
+        ggplot(aes(x = x, y = y)) +
+        geom_point() +
+        geom_point(data = tibble(x = c(levg_x, levg_x),
+                                 y = c(levg_y, predict(lm_2,
+                                                       pred_tib))),
+                   aes(x = x, y = y),
+                   color = colors[[1]],
+                   shape = 13,
+                   size = 5) +
+        geom_segment(aes(x = levg_x,
+                         y = levg_y,
+                         xend = levg_x,
+                         yend = predict(lm_2, pred_tib)),
+                     lty = 2, alpha = 0.5, color = colors[[2]]) +
+        geom_segment(aes(x = levg_x,
+                         y = predict(lm_1, pred_tib),
+                         xend = levg_x,
+                         yend = predict(lm_2, pred_tib)),
+                     lty = 2, alpha = 0.5, color = colors[[3]]) +
+        geom_segment(aes(x = levg_x,
+                         y = predict(lm_2, pred_tib),
+                         xend = (predict(lm_2, pred_tib) -
+                             lm_1$coefficients[[1]]) / lm_1$coefficients[[2]],
+                         yend = predict(lm_2, pred_tib)),
+                     lty = 2, alpha = 0.5, color = colors[[4]]) +
+        geom_abline(intercept = lm_1$coefficients[[1]],
+                    slope = lm_1$coefficients[[2]]) +
+        geom_abline(intercept = lm_2$coefficients[[1]],
+                    slope = lm_2$coefficients[[2]],
+                    lty = 2) +
+        xlim(c(0, 15)) + ylim(c(0, 15)) + 
+        ggtitle("Leverage Difference in Linear Model")
+}
+
+leverage_plot(data = testdata, x = x, y = y, levg_x = 5.5, levg_y = 12)
+
+sequence_levg <- seq(0, 15, 0.5)
+
+grid_seq <- expand.grid(sequence_levg,
+                        sequence_levg)
+
+output_plots <- future_map2(.x = grid_seq[,1],
+                            .y = grid_seq[,2],
+                            ~ leverage_plot(data = testdata,
+                                            x = x, y = y,
+                                            levg_x = .x,
+                                            levg_y = .y))
+
+dir.create("levgs")
+
+output_plots %>% length()
+    future_map(seq_len(length(output_plots)), ~ output_plots[[.x]] %>%
+                       ggsave(plot = .,
+                              filename = glue::glue("levgs/frame{.x}.png")))
+
+system("convert -delay 50 levgs/*.png levgs.gif")
+```
+
+To detect points with a lot of influence, we exclude point i and recompute the estimates to get $\hat{\beta_{(i)}}$ and $\hat{\sigma_{(i)}}^2$ where $(i)$ denotes that the $i^{th}$ case has been excluded. 
+
+Hence $\hat{y_{(i)}} = x_i^T \hat{\beta_{(i)}}$. If $\hat{y_{(i)}} - y_i$ is large, then case $i$ is an outlier. To judge the size of a potential outlier, we need an appropriate scaling. 
+
+We find: $\hat{var}(y_i - \hat{y_{(i)}}) = \hat{\sigma_{(i)}}^2 (1 + x_i^T(X_{(i)}^TX_{(i)})^{-1}x_i)$, and so we define the studentized (sometimes called jackknife or crossvalidated) residuals as 
+
+$t_i = 
+\frac{y_i - \hat{y_{(i)}}}{\hat{\sigma_{(i)}}(1 + x_i^T(X_{(i)}^TX_{(i)})^{-1}x_i)^{1/2}}=
+\frac{\hat{\epsilon_i}}{\hat{\sigma}_{(i)}\sqrt{1 - h_i}} = 
+r_i(\frac{n - p - 1}{n - p - r_i^2})^{1/2}
+$
+
+Which are distributed $t_{n-p-1}$ if the model is correct and $\epsilon ~ N(0, \sigma^2 I)$.
 
