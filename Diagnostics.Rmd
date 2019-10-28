@@ -467,49 +467,10 @@ An outlier test is useful because it enables us to distinguish between truly unu
 ```{r}
 set.seed(8888)
 
-testdata <- tibble(x = 1:10,
-                   y = 1:10 + rnorm(10)) %>%
-    add_row(x = 5.5, y = 12)
-
-(lmod <- lm(y ~ x, testdata[1:10,]))
-(lmod1 <- lm(y ~ x, testdata))
-
-# the first example adds an outlier with a central predictor value
-plot(y ~ x, rbind(testdata, p1))
-points(5.5, 12, pch = 4, cex = 2)
-abline(lmod)
-abline(lmod1, lty = 2)
-
-
-x_55 <- (predict(lmod1, tibble(x = 5.5, y = NA)) - lmod$coefficients[[1]]) / lmod$coefficients[[2]]
-
-testdata %>%
-    ggplot(aes(x = x, y = y)) +
-    geom_point() +
-    geom_point(data = tibble(x = c(5.5, 5.5), y = c(12,
-                                                    predict(lmod1, newdata = tibble(x = 5.5, y = NA)))),
-               aes(x = x, y = y), color = "mediumpurple", shape = 13, size = 5) +
-    geom_segment(aes(x = 5.5,
-                     y = 12,
-                     xend = 5.5,
-                     yend = predict(lmod1, newdata = tibble(x = 5.5, y = NA))),
-                 lty = 2, alpha = 0.5, color = "firebrick1") +
-    geom_segment(aes(x = 5.5,
-                     y = predict(lmod, newdata = tibble(x = 5.5, y = NA)),
-                     xend = 5.5,
-                     yend = predict(lmod1, newdata = tibble(x = 5.5, y = NA))),
-                 lty = 2, alpha = 0.5, color = "skyblue") +
-    geom_segment(aes(x = 5.5,
-                     y = predict(lmod1, tibble(x = 5.5, y = NA)),
-                     xend = x_55,
-                     yend = predict(lmod1, tibble(x = 5.5, y = NA))),
-                 lty = 2, alpha = 0.5, color = "orange") +
-    geom_abline(intercept = lmod$coefficients[[1]],
-                slope = lmod$coefficients[[2]]) +
-    geom_abline(intercept = lmod1$coefficients[[1]],
-                slope = lmod1$coefficients[[2]],
-                lty = 2) +
-    ggtitle("Leverage Difference in Linear Model")
+testdata <- tibble(x = 1:15 + rnorm(15),
+                   y = 1:15 + rnorm(15)) %>%
+    add_row(x = 1:15 + rnorm(15),
+                   y = 1:15 + rnorm(15))
 
 leverage_plot <- function(data, x, y, levg_x, levg_y,
                    colors = c("mediumpurple", "firebrick1",
@@ -560,26 +521,27 @@ leverage_plot <- function(data, x, y, levg_x, levg_y,
 
 leverage_plot(data = testdata, x = x, y = y, levg_x = 5.5, levg_y = 12)
 
-sequence_levg <- seq(0, 15, 0.5)
+# generate leverage plot gif
+## sequence_levg <- seq(0, 15, 0.5)
 
-grid_seq <- expand.grid(sequence_levg,
-                        sequence_levg)
+## grid_seq <- expand.grid(sequence_levg,
+##                         sequence_levg)
 
-output_plots <- future_map2(.x = grid_seq[,1],
-                            .y = grid_seq[,2],
-                            ~ leverage_plot(data = testdata,
-                                            x = x, y = y,
-                                            levg_x = .x,
-                                            levg_y = .y))
+## output_plots <- future_map2(.x = grid_seq[,1],
+##                             .y = grid_seq[,2],
+##                             ~ leverage_plot(data = testdata,
+##                                             x = x, y = y,
+##                                             levg_x = .x,
+##                                             levg_y = .y))
 
-dir.create("levgs")
+## dir.create("levgs")
 
-output_plots %>% length()
-    future_map(seq_len(length(output_plots)), ~ output_plots[[.x]] %>%
-                       ggsave(plot = .,
-                              filename = glue::glue("levgs/frame{.x}.png")))
+## output_plots %>%
+##     future_map(seq_len(length(output_plots)), ~ output_plots[[.x]] %>%
+##                        ggsave(plot = .,
+##                               filename = glue::glue("levgs/frame{.x}.png")))
 
-system("convert -delay 50 levgs/*.png levgs.gif")
+## system("convert -delay 50 levgs/*.png levgs.gif")
 ```
 
 To detect points with a lot of influence, we exclude point i and recompute the estimates to get $\hat{\beta_{(i)}}$ and $\hat{\sigma_{(i)}}^2$ where $(i)$ denotes that the $i^{th}$ case has been excluded. 
@@ -596,3 +558,115 @@ $
 
 Which are distributed $t_{n-p-1}$ if the model is correct and $\epsilon ~ N(0, \sigma^2 I)$.
 
+Since $t_i ~ t_{n - p - 1}$, we can calculate a p-value to test whether case $i$ is an outlier. However, we don't want to fall victim to statistical noise -- if we tested 100 pts with a 5% significance level, we would expect 5 outliers. 
+
+Some adjustment of the level of the test is necessary to avoid identifying an excess of outliers. Suppose we want a level $\alpha$ test. Now P(all tests accept) = 1 - p(at least one rejects) $\geq 1 - \sum_j$ P(test i rejects) = $1 - n\alpha$. This suggests that if an overall level $\alpha$ test is required, then a level $\alpha / n$ should be used in each of the tests. This is called the **Bonferroni Correction** and it is used in contexts other than outliers. The larger n is, the more conservative it gets. 
+
+```{r}
+# generate studentized residuals
+studentized_resid <- rstudent(lmod)
+
+# get max of the studentized residuals
+studentized_resid[which.max(abs(studentized_resid))]
+
+# This is large for a standard normal scale, but is it an outlier? Compute Bonferroni
+qt(.05 / (50 * 2), 44)
+```
+
+Since 2.85 is less than 3.53, we conclude that observation 46 is not an outlier. This indicates that it is not worth the trouble of comptuing the outlier test p-value unless the studentized residual exceeds about 3.5 in absolute value. 
+
+**Points to Consider**
+
+1. Two or more outliers next to each other can hide each other. 
+2. An outlier in one model may not be an outlier in another when the variables have been changed or transformed. We will need to reinvestigate the question of outliers when we change the model. 
+3. The error distribution may not be normal, so larger residuals may be expected. 
+4. Individual outliers have less of an effect as we add more data. In large datasets, we generally only need to worry about clusters of outliers. Such clusters are less likely to occur by chance and more likely to represent actual structure.
+
+**What to do**
+
+1. Check for data entry error 
+2. Examine the physical context. We may want to look for outliers, e.g. for things like fraud 
+3. Exclude the point, but try reincluding it later if the model is changed. The exclusion of one or more outliers may make the difference between statistical significance or not. Be aware that casual or dishonest exclusion of outliers is regarded as serious research malpractice. 
+4. Suppose we find outliers which are viewed as naturally occurring. Particularly if there are substantial numbers of such points, it is more efficient and reliable to use robust regression. Some adjustment to the inferential methods is necessary in such cases; in particular the uncertainty assessment for prediction needs to reflect the fact that extreme values can occur. 
+5. It is dangerous to exclude outliers in an automatic manner. 
+
+Here is an example of a dataset with multiple outliers
+
+```{r}
+data(star, package = "faraway")
+star %<>% as_tibble()
+
+(star %>%
+    ggplot(aes(x = temp, y = light)) +
+    geom_point() +
+    xlab("log(Temperature)") + ylab("log(Light Intensity)") -> base_plot)
+
+# fit a regression and add it to the plot
+lmod <- lm(light ~ temp, star)
+
+base_plot +
+    geom_abline(intercept = lmod$coefficients[[1]],
+                slope = lmod$coefficients[[2]],
+                lty = 4, color = "mediumpurple")
+
+# test for outliers
+range(rstudent(lmod))
+qt(.05 / (47 * 2), 45)
+```
+
+No outliers are found, even though we can clearly see them in the plot. 
+
+Let's see what happens when we exclude the four upper left points (giants)
+
+```{r}
+lmodi <- lm(light ~ temp, data = star, subset = (temp > 3.6))
+
+base_plot +
+    geom_abline(intercept = lmodi$coefficients[[1]],
+                slope = lmodi$coefficients[[2]],
+                lty = 4, color = "mediumpurple") +
+    geom_abline(intercept = lmod$coefficients[[1]],
+                slope = lmod$coefficients[[2]],
+                lty = 4, color = "skyblue")
+```
+
+This illustrates the problem of multiple outliers. We can visualize the problem here, but it would be much more difficult with higher dimensions. Generally, robust regression methods would be superior here.
+
+# Influential Observations 
+
+An influential point is one whose removal from the dataset would cause a large change in the fit. It may or may not be an outlier or have a large leverage, but it tends to have at least one of these properties.
+
+We can consider the Cook statistics. They reduce the information to a single value for each case, and are defined as 
+
+$D_i = \frac{(\hat{y} - \hat{y_{(i)}})^T(\hat{y} - \hat{y_{(i)}})}{p \hat{\sigma}^2} = \frac{1}{p}r_i^2 \frac{h_i}{1 - h_i}$
+
+
+Where the first term $r_i^2$ is the residual effect and the second is the leverage. 
+
+We can use the halfnormal plot of $D_i$ to identify influential observations
+
+```{r}
+lmod <- lm(sr ~ ., savings)
+
+# generate halfnorm plot 
+(lmod %>%
+    augment() %>%
+    .$.cooksd %>% 
+    gghalfnorm::gghalfnorm() -> p_cooksd)
+
+# exclude the largest influence point and refit
+lmodi <- lm(sr ~ ., savings %>% slice(-46))
+
+lmodi %>% augment()
+
+tidy_diff <- function(lm1, lm2) {
+    lm1 <- tidy(lm1)
+    lm2 <- tidy(lm2)
+
+    # add code here to get the difference between two tidy df outputs 
+}
+
+lmod %>% tidy() -> lm_1
+lmodi %>% tidy() -> lm_2
+
+```
