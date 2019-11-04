@@ -519,7 +519,7 @@ leverage_plot <- function(data, x, y, levg_x, levg_y,
         ggtitle("Leverage Difference in Linear Model")
 }
 
-leverage_plot(data = testdata, x = x, y = y, levg_x = 5.5, levg_y = 12)
+leverage_plot(data = testdata, x = x, y = y, levg_x = 1.5, levg_y = 12)
 
 # generate leverage plot gif
 ## sequence_levg <- seq(0, 15, 0.5)
@@ -648,25 +648,112 @@ We can use the halfnormal plot of $D_i$ to identify influential observations
 ```{r}
 lmod <- lm(sr ~ ., savings)
 
-# generate halfnorm plot 
+# generate halfnorm plot
 (lmod %>%
     augment() %>%
-    .$.cooksd %>% 
+    .$.cooksd %>%
     gghalfnorm::gghalfnorm() -> p_cooksd)
+
 
 # exclude the largest influence point and refit
 lmodi <- lm(sr ~ ., savings %>% slice(-46))
 
-lmodi %>% augment()
+lmodi %>% tidy()
 
-tidy_diff <- function(lm1, lm2) {
-    lm1 <- tidy(lm1)
-    lm2 <- tidy(lm2)
+# compared to the full data fit
+lmod %>% tidy()
 
-    # add code here to get the difference between two tidy df outputs 
+lmod %>% augment() %>% glimpse()
+
+dfbeta(lmod) %>%
+    as_tibble() %>%
+    select(pop15) %>%
+    nrow()
+
+loo_diff <- function(model, param) {
+    differences <- dfbeta(model) %>%
+        as_tibble() %>%
+        select({{param}})
+
+    differences %>%
+        mutate(Index = row_number()) %>% 
+        ggplot(aes(x = Index, y = {{param}})) +
+        geom_point() +
+        geom_hline(yintercept = 0) +
+        ggtitle(latex2exp::TeX("$\\hat{\\beta} - \\hat{\\beta_{(i)}}$"),
+                subtitle = "Changes in Coefficient per Datum") +
+        scale_x_continuous(breaks = seq_len(nrow(differences)))
 }
 
-lmod %>% tidy() -> lm_1
-lmodi %>% tidy() -> lm_2
+loo_diff(lmod, pop15)
+```
 
+The 23rd row sticks out as causing a large shift in the coefficient of pop_15. We can examine the effect of removing it 
+
+```{r}
+lmodj <- lm(sr ~ ., savings %>% slice(-23))
+
+lmod %>% summary()
+lmodj %>% summary()
+```
+
+By removing the 23rd observation, we see a few changes: 
+
+- ddpi is no longer significant 
+- our R squared value has dropped by about 6%. 
+
+```{r}
+plot(lmodj)
+```
+
+# Checking the Structure of the Model 
+
+We can also use diagnostics to detect deficiencies in the structural part of the model, given by $E[Y] = X \beta$. The residuals are the best clues. 
+
+We have already discussed plots of $\hat{\epsilon}$ against $\hat{y}$ and $x_i$. We used these plots to check the assumptions on the error, but they can also suggest transformations of the variables which might improve the structural form of the model. 
+
+Normally we check the plots of y against each $x_i$ before model fitting. The drawback to this is that the other predictors often affect the relationship between a given predictor and the response. 
+
+**Partial Regression** or **Added Variable** plots can help isolate the effects of $x_i$ on y. We regress y on all x except $x_i$ and get residuals $\hat{\delta}$. These represent y with all other X-effects taken out. 
+
+Similarly if we regress $x_i$ on all x except $x_i$, and get residuals $\hat{\gamma}$, we have the effect of each $x_i$ with the other X-effect taken out. 
+
+```{r}
+partial_regression_plot <- function(data, response, var) {
+    # get vars that aren't our var
+    vars <- colnames(data) %>%
+        str_remove(c({{response}}, {{var}})) %>%
+        .[. != ""] %>%
+        paste(collapse = " + ")
+
+    formula_1 <- paste0(response, " ~ ", vars) %>% as.formula()
+    formula_2 <- paste0(var, " ~ ", vars) %>% as.formula()
+    
+    # fit lmod
+    lmod_1 <- lm(formula_1, data)
+    lmod_2 <- lm(formula_2, data)
+
+    # get residuals
+    response_resid <- lmod_1 %>%
+        augment() %>%
+        select(.resid) %>%
+        flatten_dbl()
+
+    var_resid <- lmod_2 %>%
+        augment() %>%
+        select(.resid) %>%
+        flatten_dbl()
+
+    resids <- tibble("var" = var_resid,
+                     "response" = response_resid)
+    resids %>%
+        ggplot(aes(x = var, y = response)) +
+        geom_point() +
+        geom_smooth(method = "lm", se = FALSE,
+                    lty = 2, color = "mediumpurple", alpha = 0.3)
+}
+
+partial_regression_plot(savings, response = "sr", var = "pop15")
+
+colnames(savings) %>% str_remove(c("sr", "pop15")) %>% .[. != ""] %>% paste(collapse = " + ")
 ```
