@@ -5,6 +5,7 @@ library(magrittr)
 library(broom)
 library(gganimate)
 library(furrr)
+library(cowplot)
 plan(multiprocess)
 ```
 
@@ -714,7 +715,7 @@ We have already discussed plots of $\hat{\epsilon}$ against $\hat{y}$ and $x_i$.
 
 Normally we check the plots of y against each $x_i$ before model fitting. The drawback to this is that the other predictors often affect the relationship between a given predictor and the response. 
 
-**Partial Regression** or **Added Variable** plots can help isolate the effects of $x_i$ on y. We regress y on all x except $x_i$ and get residuals $\hat{\delta}$. These represent y with all other X-effects taken out. 
+**Partial Regression** or **Added Variable** plots can help isolate the effects of $x_i$ on y. We regress y on all x except \$x_i$ and get residuals $\hat{\delta}$. These represent y with all other X-effects taken out. 
 
 Similarly if we regress $x_i$ on all x except $x_i$, and get residuals $\hat{\gamma}$, we have the effect of each $x_i$ with the other X-effect taken out. 
 
@@ -754,6 +755,77 @@ partial_regression_plot <- function(data, response, var) {
 }
 
 partial_regression_plot(savings, response = "sr", var = "pop15")
+```
 
-colnames(savings) %>% str_remove(c("sr", "pop15")) %>% .[. != ""] %>% paste(collapse = " + ")
+The partial regression plot provides some intuition about the meanings of regression coefficients. We are looking at the marginal relationship between the response and the predictor after the effect of the other predictors have been removed. Multiple regression is difficult because of visualization limitations, but partial regression plots allow us to view the relationship between one predictor and the response, much as in simple regression. 
+
+**Partial Residual Plots** serve as an alternative to added variable (or partial regression) plots. We construct the response with the predicted effect of the other X removed:
+
+$y - \sum_{j \dne i} x_j \hat{\beta_j} = \hat{y} + \hat{\epsilon} - \sum_{j \dne i} x_j \hat{\beta_j} = x_i \hat{\beta_i} + \hat{\epsilon}$
+
+The partial residual plot is then $\hat{\epsilon} + \hat{\beta_i}x_i$ against $x_i$. Partial residual plots are believed to be better for nonlinearity detection while added variable plots are better for outlier / influential point detection. 
+
+```{r}
+partial_residual_plot <- function(model, predictor) {
+    # get terms
+    terms <- predict(model, type = "terms") %>%
+        as_tibble() %>%
+        select({{predictor}}) %>%
+        flatten_dbl()
+    
+    model %>%
+        augment() %>%
+        mutate(partial_resid = terms + .resid) %>%
+        ggplot(aes(x = {{predictor}}, y = partial_resid)) +
+        geom_point() +
+        geom_smooth(method = "lm", se = FALSE,
+                    color = "mediumpurple", lty = 2) +
+        ylab("Partial Residuals")
+}
+
+lmod %>%
+    tidy() %>%
+    .[2:5, 1] %>%
+    flatten_chr() %>%
+    map(sym) %>% 
+    map(., ~ partial_residual_plot(lmod, !!.x)) -> pr_plots
+
+plot_grid(plotlist = pr_plots, ncol = 2)
+```
+
+For pop15, we can see two distinct groups in the plot. It suggests that there may be a different relationship in the two groups. 
+
+```{r}
+lm_g1 <- savings %>%
+    filter(pop15 > 35) %>%
+    lm(data = ., formula = sr ~ .)
+
+lm_g2 <- savings %>%
+    filter(pop15 <= 35) %>%
+    lm(data = ., formula = sr ~ .)
+
+lm_g1 %>%
+    tidy() %>%
+    mutate_if(is.double, round, 4)
+
+compare_summaries <- function(m1, m2) {
+    m1 %<>% tidy() %>%
+        set_names(paste(colnames(.), "1", sep = "_")) %>%
+        mutate_if(is.double, round, 4)
+
+    m2 %<>% tidy() %>%
+        set_names(paste(colnames(.), "2", sep = "_")) %>%
+        mutate_if(is.double, round, 4)
+    
+    bind_cols(m1, m2) %>%
+        mutate(estimate = paste0("|", estimate_1, " - ",
+                                 estimate_2, "| = ",
+                                 abs(estimate_1 - estimate_2)),
+               std.error = abs(std.error_1 - std.error_2),
+               statistic = abs(statistic_1 - statistic_2),
+               p.value = abs(p.value_1 - p.value_2)) %>%
+        select(term = term_1, estimate, std.error, statistic, p.value)
+}
+
+compare_summaries(lm_g1, lm_g2)
 ```
