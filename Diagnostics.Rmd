@@ -809,6 +809,8 @@ lm_g1 %>%
     mutate_if(is.double, round, 4)
 
 compare_summaries <- function(m1, m2) {
+    require(rlang)
+
     m1 %<>% tidy() %>%
         set_names(paste(colnames(.), "1", sep = "_")) %>%
         mutate_if(is.double, round, 4)
@@ -816,16 +818,61 @@ compare_summaries <- function(m1, m2) {
     m2 %<>% tidy() %>%
         set_names(paste(colnames(.), "2", sep = "_")) %>%
         mutate_if(is.double, round, 4)
-    
-    bind_cols(m1, m2) %>%
-        mutate(estimate = paste0("|", estimate_1, " - ",
-                                 estimate_2, "| = ",
-                                 abs(estimate_1 - estimate_2)),
-               std.error = abs(std.error_1 - std.error_2),
-               statistic = abs(statistic_1 - statistic_2),
-               p.value = abs(p.value_1 - p.value_2)) %>%
+
+    m_tbl <- bind_cols(m1, m2)
+
+    create_eqn <- function(name) {
+        evaluator <- function(exp) {
+            return(eval_tidy(parse_expr(exp),
+                             data = m_tbl))
+        }
+
+        name_1 <- paste0(name, "_1")
+        name_2 <- paste0(name, "_2")
+
+        return(paste0("|",
+                      evaluator(name_1), " - ",
+                      evaluator(name_2), "| = ",
+                      abs(evaluator(name_1) - evaluator(name_2))))
+    }
+
+    out_tbl <- m_tbl %>%
+        mutate(estimate = create_eqn("estimate"),
+               std.error = create_eqn("std.error"),
+               statistic = create_eqn("statistic"),
+               p.value = create_eqn("p.value")) %>%
         select(term = term_1, estimate, std.error, statistic, p.value)
+
+    # get sums of digits
+    out_tbl %>%
+        map(., ~ str_extract(.x, pattern = "[[:digit:]]+\\.[[:digit:]]+$") %>%
+            as.double() %>% na.omit() %>% sum()) -> sod
+
+    out_tbl %<>%
+        add_row("term" = "Sum of Differences",
+                "estimate" = sod$estimate,
+                "std.error" = sod$std.error,
+                "statistic" = sod$statistic,
+                "p.value" = sod$p.value)
+
+    return(out_tbl)
 }
 
 compare_summaries(lm_g1, lm_g2)
 ```
+
+From our comparison, we see that separating the pop15 into two separate groups causes large deviations in estimate, std.error, statistic, and p value. We can also view a graphical interpretation of the difference between the groups
+
+```{r}
+lm_g1
+
+savings %>%
+    filter(pop15 <= 35) %>%
+    GGally::ggpairs()
+
+savings %>%
+    filter(pop15 > 35) %>%
+    GGally::ggpairs()
+```
+
+# Discussion 
