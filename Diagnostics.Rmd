@@ -39,7 +39,7 @@ We see that while the errors may have equal variance and be uncorrelated, the re
 
 We can not check the assumption of constant variance just by examining the residuals alone. We need to check whether the variance in the residuals is related to some other quantity. 
 
-The most useful diagnostic is a plot of $\hat{\epsilon}$ against $\hat{y}$, or residuals against fitted. If all is well, we should see constant symmetrical variation (known as homoscedasticity) in the vertical $\hat{\epsilon}$ direction. **Nonconstant** variance is called heterscedasticity. Nonlinearity of the structural part of the model can also be detected in this plot. 
+The most useful diagnostic is a plot of $\hat{\epsilon}$ against $\hat{y}$, or residuals against fitted. If all is well, we should see constant symmetrical variation (known as homoscedasticity) in the vertical $\hat{\epsilon}$ direction. **Nonconstant** variance is called heteroscedasticity. Nonlinearity of the structural part of the model can also be detected in this plot. 
 
 It is also worthwhile to plot $\hat{\epsilon}$ against $x_i$ for potential predictors that are in the current model as well as those that are not used. For plots of residuals against predictors that are not in the model, any observed structure may indicate that this predictor should be included in the model. 
 
@@ -876,3 +876,102 @@ savings %>%
 ```
 
 # Discussion 
+
+Some assumptions are more important than others because some violations are more serious in that they can lead to very misleading conclusions. Ordered by importance: 
+
+0. The data at hand should be relevant to the question of interest. 
+
+1. Systematic form of the model. If this is seriously wrong, then predictions will be inaccurate and we have no way to explain relationships 
+
+2. Dependence of Errors: The presence of strong dependence means that there is less information in the data than the sample size may suggest. 
+
+3. Nonconstant variance: A failure to address this will lead to inaccurate inferences. In particular, prediction uncertainty may not be properly quantified. 
+
+4. Normality: This is the least important simply because with large datasets, the inference will become more robust to the lack of normality as the central limit theorem will mean that the approximations will tend to be adequate. 
+
+# Exercises
+
+1. 
+
+```{r}
+# load data
+data(sat, package = "faraway")
+sat %<>% as_tibble()
+
+sat
+# fit model
+(lmod <- lm(total ~ expend + salary + ratio + takers, sat))
+```
+
+a. Check the constant variance assumption for the errors
+
+```{r}
+lm_aug <- lmod %>% augment()
+
+lm_aug %>%
+    diag_plot(x = .fitted, y = .resid) -> p1
+
+lm_aug %>%
+    diag_plot(x = .fitted, y = sqrt(abs(.resid))) -> p2
+
+plot_grid(p1, p2, ncol = 2)
+
+# perform numerical test to check for nonconstant variance
+nc_test <- lm(sqrt(abs(.resid)) ~ .fitted, lm_aug)
+
+nc_test %>% summary()
+```
+
+In the plots above, we see that there may be two different groups in the residuals, totals above and below 950. Let's perform an F test to compare the variances of the two samples
+
+```{r}
+var.test(lm_aug$.resid[lm_aug$total > 950], lm_aug$.resid[lm_aug$total <= 950])
+```
+
+In the test above, our null hypothesis is that the true ratio of the variances of the total group split at 950 are equal to 1, i.e. they have the same variance. Our alternative hypothesis is that the true ratio of variances is not equal to 1. Since our p-value is 0.4888, we fail to reject the null hypothesis and accept that they have the same variance.
+
+In the numerical test above, we check for a distinctive slope on the linear model of sqrt(abs(.resid)) against our fitted values.
+
+```{r}
+p2 +
+    geom_abline(intercept = nc_test$coefficients[[1]],
+                slope = nc_test$coefficients[[2]],
+                color = "mediumpurple", lty = 3)
+```
+
+We see that there is no linear trend in our values. 
+
+
+b. Check the normality assumption
+
+```{r}
+lm_aug %>%
+    ggplot(aes(sample = .resid)) +
+    stat_qq() +
+    stat_qq_line() -> p1
+
+lm_aug %>%
+    ggplot(aes(x = .resid)) +
+    geom_histogram(bins = 10, fill = "skyblue", color = "black") -> p2
+
+cowplot::plot_grid(p1, p2, ncol = 1)
+```
+
+From our plots above, we see the following:
+
+- The residuals (mostly) follow the line, which charts a theoretical perfect normal distribution
+- Our residual histogram is close to the ideal bell curve shape
+
+We can also do a statistical test for normality:
+
+```{r}
+shapiro.test(residuals(lmod))
+```
+
+In this case, our null hypothesis is that our residuals are normally distributed, and we fail to reject the null hypothesis. 
+
+c. Check for large leverage points
+
+```{r}
+
+```
