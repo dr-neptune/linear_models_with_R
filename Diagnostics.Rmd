@@ -972,6 +972,47 @@ In this case, our null hypothesis is that our residuals are normally distributed
 
 c. Check for large leverage points
 
+We can see if we need to look for large leverages closely by checking for leverages of more than 2p / n
+
+```{r}
+# get number of predictors in lmod 
+sum(lm_aug$.hat)
+
+# calculate 2p / n
+2 * 5 / nrow(lm_aug)
+
+# filter on points with more leverage than 2p / n
+lm_aug %>%
+    filter(abs(.hat) >= 0.2)
+```
+
+We can plot the leverage points by using the .hat values from the augmented lm model and making a halfnorm plot.
+
+```{r}
+gghalfnorm::gghalfnorm(lm_aug$.hat)
+```
+
+We don't find any points which diverge significantly from the rest of the data. 
+
+We can also check the standardized residual qqplot to look for outliers >= 2 sd 
+
+```{r}
+lm_aug %>%
+    qq_plot(choice = .std.resid, title = "Standardized Residuals")
+```
+
+Since the residuals have been standardized, we expect the points to approximately follow the y = x line if normality holds. In this case, there is one out of place point to the far left.
+
+```{r}
+lm_aug %>%
+    arrange(.std.resid) %>%
+    slice(1)
+```
+
+This corresponds to the point above.
+
+d. Check for outliers
+
 ```{r}
 
 ```
