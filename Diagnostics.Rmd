@@ -898,7 +898,6 @@ Some assumptions are more important than others because some violations are more
 data(sat, package = "faraway")
 sat %<>% as_tibble()
 
-sat
 # fit model
 (lmod <- lm(total ~ expend + salary + ratio + takers, sat))
 ```
@@ -975,7 +974,7 @@ c. Check for large leverage points
 We can see if we need to look for large leverages closely by checking for leverages of more than 2p / n
 
 ```{r}
-# get number of predictors in lmod 
+# get number of predictors in lmod
 sum(lm_aug$.hat)
 
 # calculate 2p / n
@@ -1014,5 +1013,80 @@ This corresponds to the point above.
 d. Check for outliers
 
 ```{r}
+get_adj_outliers <- function(lmod,
+                      base_p_value = 0.05,
+                      correction_strength = NA,
+                      top_vals = 3) {
+    # get studentized resids
+    st_res <- rstudent(lmod)
 
+    # set correction strength
+    if (is.na(correction_strength)) {
+        correction_strength <- lmod %>%
+            augment() %>%
+            nrow()
+    } else {
+        correction_strength
+    }
+
+    # compute bonferroni
+    dof <- lmod %>%
+        glance() %>%
+        pull(df.residual)
+
+    base_p_value <- base_p_value
+
+    # compute conferroni
+    bf_val <- qt(p = base_p_value / correction_strength,
+                 df = dof)
+
+    # get top_n absolute value studentized residuals
+    top_n_vals <- st_res %>%
+        enframe() %>%
+        top_n(abs(value), n = top_vals) %>%
+        add_row(name = "Bonferroni Correction Threshold",
+                value = bf_val) %>%
+        rowwise() %>%
+        mutate(over_thresh = ifelse(abs(value) > abs(bf_val),
+                                    TRUE,
+                                    FALSE))
+
+    # get outlier values
+    top_n_vals %>%
+        pluck(1) %>%
+        head(-1) %>%
+        map_df(., ~ lmod %>%
+            augment() %>%
+            slice(as.integer(.x)) %>%
+            mutate(name = .x)) -> outlier_values
+
+    outlier_values %>%
+        left_join(top_n_vals, by = "name") %>%
+        select("Index" = name, over_thresh, value, everything())
+}
+
+lmod %>%
+    get_adj_outliers()
+```
+
+From the above, with the Bonferroni correction we do not come across any outliers.
+
+e. Check for influential points
+
+```{r}
+# generate halfnorm plot
+(lm_aug %>% 
+    .$.cooksd %>%
+    gghalfnorm::gghalfnorm() -> p_cooksd)
+```
+
+From the halfnormal plot above, we see that the 44th observation seems influential.
+
+```{r}
+# exclude the largest influence point and refit
+(lmodi <- lm(total ~ expend + salary + ratio + takers, sat %>% slice(-44)))
+
+# compared to the full data fit
+lmodi %>% tidy()
+lmod %>% tidy()
 ```
