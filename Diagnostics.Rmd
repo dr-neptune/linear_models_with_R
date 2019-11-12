@@ -729,7 +729,7 @@ partial_regression_plot <- function(data, response, var) {
 
     formula_1 <- paste0(response, " ~ ", vars) %>% as.formula()
     formula_2 <- paste0(var, " ~ ", vars) %>% as.formula()
-    
+
     # fit lmod
     lmod_1 <- lm(formula_1, data)
     lmod_2 <- lm(formula_2, data)
@@ -751,10 +751,23 @@ partial_regression_plot <- function(data, response, var) {
         ggplot(aes(x = var, y = response)) +
         geom_point() +
         geom_smooth(method = "lm", se = FALSE,
-                    lty = 2, color = "mediumpurple", alpha = 0.3)
+                    lty = 2, color = "mediumpurple", alpha = 0.3) +
+        ggtitle(var)
 }
 
 partial_regression_plot(savings, response = "sr", var = "pop15")
+
+gen_all_partial <- function(data, response) {
+    plots <- data %>%
+        names() %>%
+        .[!. %in% response] %>%
+        map(., ~ partial_regression_plot(data, response = response, var = .x))
+
+    plot_grid(plotlist = plots)
+}
+
+savings %>%
+    gen_all_partial_rp(response = "sr")
 ```
 
 The partial regression plot provides some intuition about the meanings of regression coefficients. We are looking at the marginal relationship between the response and the predictor after the effect of the other predictors have been removed. Multiple regression is difficult because of visualization limitations, but partial regression plots allow us to view the relationship between one predictor and the response, much as in simple regression. 
@@ -772,7 +785,7 @@ partial_residual_plot <- function(model, predictor) {
         as_tibble() %>%
         select({{predictor}}) %>%
         flatten_dbl()
-    
+
     model %>%
         augment() %>%
         mutate(partial_resid = terms + .resid) %>%
@@ -783,14 +796,19 @@ partial_residual_plot <- function(model, predictor) {
         ylab("Partial Residuals")
 }
 
-lmod %>%
-    tidy() %>%
-    .[2:5, 1] %>%
-    flatten_chr() %>%
-    map(sym) %>% 
-    map(., ~ partial_residual_plot(lmod, !!.x)) -> pr_plots
+gen_all_partial_resids <- function(model) {
+    model %>%
+        tidy() %>%
+        .[2:5, 1] %>%
+        flatten_chr() %>%
+        map(sym) %>%
+        map(., ~ partial_residual_plot(lmod, !!.x)) -> pr_plots
 
-plot_grid(plotlist = pr_plots, ncol = 2)
+    plot_grid(plotlist = pr_plots, ncol = 2)
+}
+
+lmod %>%
+    gen_all_partial_resids()
 ```
 
 For pop15, we can see two distinct groups in the plot. It suggests that there may be a different relationship in the two groups. 
@@ -846,14 +864,22 @@ compare_summaries <- function(m1, m2) {
     # get sums of digits
     out_tbl %>%
         map(., ~ str_extract(.x, pattern = "[[:digit:]]+\\.[[:digit:]]+$") %>%
-            as.double() %>% na.omit() %>% sum()) -> sod
+            as.double() %>% na.omit()) -> digitz
+
+    sod <- digitz %>% map(., ~.x %>% sum())
+    coef_sod <- digitz %>% map(., ~ .x %>% tail(-1) %>% sum())
 
     out_tbl %<>%
         add_row("term" = "Sum of Differences",
                 "estimate" = sod$estimate,
                 "std.error" = sod$std.error,
                 "statistic" = sod$statistic,
-                "p.value" = sod$p.value)
+                "p.value" = sod$p.value) %>%
+        add_row("term" = "Coefficient Sum of Differences",
+                "estimate" = coef_sod$estimate,
+                "std.error" = coef_sod$std.error,
+                "statistic" = coef_sod$statistic,
+                "p.value" = coef_sod$p.value)
 
     return(out_tbl)
 }
@@ -1075,7 +1101,7 @@ e. Check for influential points
 
 ```{r}
 # generate halfnorm plot
-(lm_aug %>% 
+(lm_aug %>%
     .$.cooksd %>%
     gghalfnorm::gghalfnorm() -> p_cooksd)
 ```
@@ -1089,4 +1115,68 @@ From the halfnormal plot above, we see that the 44th observation seems influenti
 # compared to the full data fit
 lmodi %>% tidy()
 lmod %>% tidy()
+
+# compare summaries
+compare_summaries(lmod, lmodi) %>%
+    slice(2:6)
 ```
+
+When removing the influential point, we not see that the ratio is no longer significant. 
+
+f. Check the structure of the relationship between the predictors and the response
+
+In the model we are looking at, our response variable is total
+
+```{r}
+# partial regression plots
+sat %>%
+    select(c("total", "expend", "salary", "ratio", "takers")) %>%
+    gen_all_partial_rp(response = "total")
+```
+
+The plot above shows us the effect of regression y on all x except the variable. This lends interpretation to the coefficients of the variables.
+
+For example, here are the coefficients for each variable:
+
+```{r}
+lmod %>%
+    tidy() %>%
+    select(1:2)
+```
+
+partial regression plots are considered to be better for influential point detection. In the plots above we don't see any largely influential points.
+
+We can also look at the partial residual plots, which show the difference in residuals when each predictor is held out 
+
+```{r}
+lmod %>%
+    gen_all_partial_resids()
+```
+
+partial residual plots are considered better for nonlinearity detection. In the plot above we see a weird effect with takers. 
+
+```{r}
+sat %>%
+    select(total, ratio, salary, takers) %>%
+    GGally::ggpairs()
+```
+
+What we are seeing is the trend that as the number of takers goes up, the average score goes down. 
+
+Lets look into the change when we split takers into two groups, +- 40
+
+```{r}
+lm_1 <- sat %>%
+    select(total, ratio, salary, takers, expend) %>%
+    filter(takers > 40) %>%
+    lm(total ~ ., .)
+
+lm_2 <- sat %>%
+    select(total, ratio, salary, takers, expend) %>%
+    filter(takers <= 40) %>%
+    lm(total ~ ., .)
+
+compare_summaries(lm_1, lm_2)
+```
+
+Overall we see a fairly large change in the coefficient sum of differences. 
