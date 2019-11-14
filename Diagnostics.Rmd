@@ -1180,3 +1180,54 @@ compare_summaries(lm_1, lm_2)
 ```
 
 Overall we see a fairly large change in the coefficient sum of differences. 
+
+2. 
+
+```{r}
+data(teengamb, package = "faraway")
+
+teengamb %<>% as_tibble()
+
+lmod <- lm(gamble ~ ., teengamb)
+lmod %>% augment() -> lm_aug
+# a) check constant variance assumption for errors
+lmod %>%
+    diag_plot(x = .fitted, y = .resid)
+
+lmod %>%
+    diag_plot(x = .fitted, y = sqrt(abs(.resid)))
+
+## these are inconclusive - use numerical test
+lm(.resid ~ .fitted, lm_aug) %>% summary()
+
+## the numerical test seems fine. Generate partial residual plots to go over relationships of each predictor on residuals
+lmod %>%
+    gen_all_partial_resids()
+
+## in the plots above we see mild nonconstant variance for the income and verbal predictors
+
+# b) check the normality assumption
+lm_aug %>%
+    qq_plot(choice = .resid, title = "Residuals for LM")
+
+teengamb %>%
+    summary()
+
+## looks good. Let's back it up with a Shapiro-Wilk's test
+shapiro.test(x = lm_aug$.resid)
+
+
+## this is saying it is very non normal. Let's try again without the outlier (likely mistaken) value of 156.
+lm_aug %>%
+    slice(-24) %>%
+    qq_plot(.resid, title = "Residuals without 156 Gamble outlier")
+
+shapiro.test(lm_aug %>%
+             slice(-24) %>%
+             .$.resid)
+
+## we get a p-value of 0.51, indicating that we fail to reject the null hypothesis that the residuals are normally distributed
+
+# c) check for large leverage points
+
+```
