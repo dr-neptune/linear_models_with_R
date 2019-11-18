@@ -1190,6 +1190,11 @@ teengamb %<>% as_tibble()
 
 lmod <- lm(gamble ~ ., teengamb)
 lmod %>% augment() -> lm_aug
+
+lmod %>%
+    summary() %>%
+    tidy()
+
 # a) check constant variance assumption for errors
 lmod %>%
     diag_plot(x = .fitted, y = .resid)
@@ -1229,5 +1234,48 @@ shapiro.test(lm_aug %>%
 ## we get a p-value of 0.51, indicating that we fail to reject the null hypothesis that the residuals are normally distributed
 
 # c) check for large leverage points
+
+## Check for hat values greater than 2p / n
+teengamb %>%
+    dim() -> tg_dim
+
+val <- 2 * tg_dim[[2]] / tg_dim[[1]]
+
+lm_aug %>%
+    mutate(index = row_number()) %>%
+    filter(.hat >= val) %>%
+    select(index, everything())
+
+## so we have 4 possible points. Lets look at our halfnormal and QQ plots
+lm_aug %>%
+    .$.hat %>%
+    gghalfnorm::gghalfnorm() +
+    ggtitle("Half Normal Values for Hat Distances") -> p1
+
+lm_aug %>%
+    qq_plot(.std.resid, "Standardized Residuals") -> p2
+
+cowplot::plot_grid(p1, p2, ncol = 1)
+
+## as we see above, there is a lot of leverage present. Let's look again without the points with greater than 2p/n leverage
+teengamb %>%
+    slice(-c(31, 33, 35, 42)) %>%
+    lm(data = ., gamble ~ .) %>%
+    augment() -> lm_aug_nolev
+
+lm_aug_nolev %>%
+    .$.hat %>%
+    gghalfnorm::gghalfnorm() +
+    ggtitle("Half Normal Values without High Leverage") -> p1
+
+lm_aug_nolev %>%
+    qq_plot(.std.resid, "Standardized Residuals") -> p2
+
+cowplot::plot_grid(p1, p2, ncol = 1)
+
+## out plots still look weird, but not nearly as bad
+
+# d) Check for Outliers
+
 
 ```
