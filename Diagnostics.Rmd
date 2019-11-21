@@ -1276,6 +1276,75 @@ cowplot::plot_grid(p1, p2, ncol = 1)
 ## out plots still look weird, but not nearly as bad
 
 # d) Check for Outliers
+lmod %>%
+    get_adj_outliers()
 
+## so we have 1 outlier. Let's see the effects of fit both with and without this point
+teengamb %>%
+    slice(24)
 
+## This is likely an error. We should discard it
+
+teengamb %>%
+    slice(-24) %>%
+    lm(gamble ~ ., data = .) -> lmod_2
+
+compare_summaries(m1 = lmod, m2 = lmod_2) %>%
+    select(1:2)
+
+## there is a big difference in the fit with and without this point
+gen_all_partial(data = teengamb, response = "gamble")
+gen_all_partial(data = teengamb %>% slice(-24), response = "gamble")
+
+## discard it
+teengamb %<>% slice(-24)
+
+# e) Check for Influntial Points
+lm_aug %>%
+    .$.cooksd %>%
+    gghalfnorm::gghalfnorm()
+
+## our most influential point is observation 30
+lmod_2 <- lm(gamble ~ ., teengamb %>% slice(-30))
+
+compare_summaries(lmod, lmod_2) %>%
+    select(1, 2)
+
+## the significance of none of the variables changed and the coefficients only changed slightly
+
+# f) Check the structure of the relationship between the predictors and the response
+gen_all_partial(teengamb, response = "gamble")
+gen_all_partial_resids(lmod)
+
+## No major outliers of nonlinearities seem to jump out
+```
+
+3. 
+
+```{r}
+data(prostate, package = "faraway")
+prostate %<>% as_tibble()
+lmod <- lm(lpsa ~ ., prostate)
+lm_aug <- lmod %>% augment()
+
+# a) Check the constant variance assumption for errors
+lm_aug %>%
+    diag_plot(x = .fitted, y = .resid)
+
+lm_aug %>%
+    diag_plot(x = .fitted, y = sqrt(abs(.resid)))
+
+## Both look great
+
+# b) Check the normality assumption
+lm_aug %>%
+    qq_plot(choice = .resid, title = "Normality for LM")]
+
+shapiro.test(lm_aug$.resid)
+
+## Looks great
+
+# c) Check for large leverage points
+lm_aug$.hat %>%
+    gghalfnorm::gghalfnorm()
 ```
