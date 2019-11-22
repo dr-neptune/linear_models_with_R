@@ -799,7 +799,7 @@ partial_residual_plot <- function(model, predictor) {
 gen_all_partial_resids <- function(model) {
     model %>%
         tidy() %>%
-        .[2:5, 1] %>%
+        .[2:nrow(.), 1] %>%
         flatten_chr() %>%
         map(sym) %>%
         map(., ~ partial_residual_plot(lmod, !!.x)) -> pr_plots
@@ -1338,13 +1338,103 @@ lm_aug %>%
 
 # b) Check the normality assumption
 lm_aug %>%
-    qq_plot(choice = .resid, title = "Normality for LM")]
+    qq_plot(choice = .resid, title = "Normality for LM")
 
 shapiro.test(lm_aug$.resid)
 
 ## Looks great
 
 # c) Check for large leverage points
-lm_aug$.hat %>%
+large_lev_cutoff <- function(model) {
+    # get number of predictors
+    model %>% tidy() %>% nrow() - 1 -> pred_count
+
+    # get amount of data
+    model %>% augment() %>% nrow() -> data_count
+
+    # get metric
+    return(2 * pred_count / data_count)
+}
+
+get_large_lev_points <- function(model) {
+    # get cutoff
+    model %>% large_lev_cutoff() -> cutoff_point
+
+    # return hat values
+    model %>%
+        augment() %>%
+        mutate(index = row_number()) %>% 
+        filter(.hat >= cutoff_point) %>%
+        select(index, .hat, everything()) %>%
+        arrange(desc(.hat))
+}
+
+gen_leverage_plots <- function(model) {
+    model %>%
+        augment() -> lm_aug
+
+    lm_aug$.hat %>%
+        gghalfnorm::gghalfnorm() -> p1
+
+    lm_aug %>%
+        qq_plot(.std.resid, title = "Standardized Residuals") -> p2
+
+    cowplot::plot_grid(p1, p2, ncol = 1)
+}
+
+lmod %>%
+    get_large_lev_points()
+
+lmod %>%
+    gen_leverage_plots()
+
+## a few points were identified as high leverage, but everything seems fine
+
+# d) check for outliers
+lmod %>%
+    get_adj_outliers()
+
+## everything seems fine
+
+# e) Check for Influential Points
+lm_aug$.cooksd %>%
     gghalfnorm::gghalfnorm()
+
+## our most influential point is index 32
+lmod_2 <- lm(lpsa ~ ., prostate %>% slice(-32))
+
+compare_summaries(lmod, lmod_2) %>%
+    select(1, 5)
+
+## very little change
+
+# f) check the structure of the model
+prostate %>% gen_all_partial(response = "lpsa") # looks good
+lmod %>% gen_all_partial_resids()
+
+## something weird seems to be going on with lbph, lcp, pgg45. They all have a bottom number which clumps.
+prostate %>%
+    select(lbph) %>%
+    ggplot(aes(y = seq_len(nrow(prostate)),
+               x = lbph)) +
+    geom_point() +
+    geom_jitter() +
+    geom_rect(aes(xmin = -1.6, xmax = -1.2, ymin = -1, ymax = 100),
+              fill = "blue", alpha = 0.002)
+
+prostate %>%
+    filter(lbph < -1.2) %>%
+    select(lbph) %>%
+    distinct()
+
+## we have 43 rows in which everyone has an lbph of -1.39. Let's see if there is a different relationship between the two groups
+
+# drop the lbph of -1.39
+lmod_2 <- lm(lpsa ~ ., prostate %>% filter(lbph >= -1.2))
+
+# compare to the model with all the data points
+compare_summaries(lmod, lmod_2) %>%
+    select(1, 5)
+
+## removing those points made lcavol and svi non significant, and lweight and age less significant.
 ```
