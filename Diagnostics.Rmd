@@ -720,6 +720,7 @@ Normally we check the plots of y against each $x_i$ before model fitting. The dr
 Similarly if we regress $x_i$ on all x except $x_i$, and get residuals $\hat{\gamma}$, we have the effect of each $x_i$ with the other X-effect taken out. 
 
 ```{r}
+
 partial_regression_plot <- function(data, response, var) {
     # get vars that aren't our var
     vars <- colnames(data) %>%
@@ -767,7 +768,7 @@ gen_all_partial <- function(data, response) {
 }
 
 savings %>%
-    gen_all_partial_rp(response = "sr")
+    gen_all_partial(response = "sr")
 ```
 
 The partial regression plot provides some intuition about the meanings of regression coefficients. We are looking at the marginal relationship between the response and the predictor after the effect of the other predictors have been removed. Multiple regression is difficult because of visualization limitations, but partial regression plots allow us to view the relationship between one predictor and the response, much as in simple regression. 
@@ -779,6 +780,7 @@ $y - \sum_{j \dne i} x_j \hat{\beta_j} = \hat{y} + \hat{\epsilon} - \sum_{j \dne
 The partial residual plot is then $\hat{\epsilon} + \hat{\beta_i}x_i$ against $x_i$. Partial residual plots are believed to be better for nonlinearity detection while added variable plots are better for outlier / influential point detection. 
 
 ```{r}
+
 partial_residual_plot <- function(model, predictor) {
     # get terms
     terms <- predict(model, type = "terms") %>%
@@ -1352,6 +1354,10 @@ large_lev_cutoff <- function(model) {
     # get amount of data
     model %>% augment() %>% nrow() -> data_count
 
+    # print message
+    cat(paste0("Returning Leverage Points Over ",
+               round(2 * pred_count / data_count, 2), "\n"))
+
     # get metric
     return(2 * pred_count / data_count)
 }
@@ -1437,4 +1443,85 @@ compare_summaries(lmod, lmod_2) %>%
     select(1, 5)
 
 ## removing those points made lcavol and svi non significant, and lweight and age less significant.
+```
+
+4. 
+
+```{r}
+swiss <- datasets::swiss %>% as_tibble()
+lmod <- lm(Fertility ~ ., swiss)
+lm_aug <- lmod %>% augment()
+
+# a) check for constant variance assumption
+lm_aug %>% diag_plot(y = .resid, x = .fitted)
+lm_aug %>% diag_plot(y = sqrt(abs(.resid)), x = .fitted)
+
+# b) Check the normality assumption
+lm_aug %>%
+    qq_plot(choice = .resid,
+            title = "Residuals")
+
+shapiro.test(lm_aug$.resid)
+
+# c) Check for large leverage points
+lmod %>%
+    get_large_lev_points()
+
+lmod %>%
+    gen_leverage_plots()
+
+## 45 stands out
+
+lmod_2 <- lm(Fertility ~ ., data = swiss %>% slice(-45))
+
+compare_summaries(lmod, lmod_2)
+
+## There is very very little change
+
+# d) Check for outliers
+lmod %>% get_adj_outliers()
+
+# e) Check for influential points
+lm_aug$.cooksd %>%
+    gghalfnorm::gghalfnorm()
+
+## our most influential point is index 6
+lmod_2 <- lm(Fertility ~ ., swiss %>% slice(-6))
+
+compare_summaries(lmod, lmod_2) %>%
+    select(1, 5)
+
+## they all remained just as significant
+
+# f) check the structure of the relationship between predictors and response
+swiss %>% gen_all_partial(response = "Fertility")
+
+## education seems to have 3 influential points in the lower right corner
+swiss %>%
+    group_by(Education) %>%
+    tally(sort = TRUE)
+
+## these are likely the 53, 32 and 28 points.
+swiss %>%
+    filter(Education < 25) %>%
+    gen_all_partial(response = "Fertility")
+
+## this looks much more reasonable
+
+## look at partial residuals
+lmod %>%
+    gen_all_partial_resids()
+
+## the model seems to be underpredicting lower number catholic values and overpredicting higher number catholic values
+```
+
+5.
+
+```{r}
+data(cheddar, package = "faraway")
+cheddar %<>% as_tibble()
+lmod <- lm(taste ~ ., cheddar)
+
+# a) check the constant variance assumption
+
 ```
