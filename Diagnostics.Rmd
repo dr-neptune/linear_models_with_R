@@ -677,7 +677,7 @@ loo_diff <- function(model, param) {
         select({{param}})
 
     differences %>%
-        mutate(Index = row_number()) %>% 
+        mutate(Index = row_number()) %>%
         ggplot(aes(x = Index, y = {{param}})) +
         geom_point() +
         geom_hline(yintercept = 0) +
@@ -686,7 +686,37 @@ loo_diff <- function(model, param) {
         scale_x_continuous(breaks = seq_len(nrow(differences)))
 }
 
-loo_diff(lmod, pop15)
+loo_params <- function(model) {
+    model %>%
+        tidy() %>%
+        pull(1) %>%
+        .[2:length(.)] %>%
+        parse_quos(env = model$model) %>%
+        map(., ~ loo_diff(model, .x))
+}
+
+lmod %>%
+    tidy() %>%
+    pull(1) %>%
+    .[2:length(.)] %>%
+    parse_quos(env = lmod$model) -> quos_out
+
+loo_diff(lmod, eval_tidy(expr = quo_get_expr(quos_out[[1]]),
+                         env = quo_get_env(quos_out[[1]])))
+
+quos_out %>%
+    map(., ~ loo_diff(lmod, quo_get_expr(.x)))
+
+lmod$model %>% as_tibble()
+
+loo_diff(lmod, names(eval_tidy(parse_expr("dpi"),
+                         data = as_tibble(lmod$model))))
+
+loo_diff(lmod, pop75)
+
+lmod %>%
+    loo_params()
+
 ```
 
 The 23rd row sticks out as causing a large shift in the coefficient of pop_15. We can examine the effect of removing it 
@@ -1521,7 +1551,93 @@ lmod %>%
 data(cheddar, package = "faraway")
 cheddar %<>% as_tibble()
 lmod <- lm(taste ~ ., cheddar)
+lm_aug <- lmod %>% augment()
 
 # a) check the constant variance assumption
+lm_aug %>%
+    diag_plot(x = .fitted, y = .resid)
+
+# b) check the normality assumption
+lm_aug %>%
+    qq_plot(choice = .resid, title = "Residuals")
+
+shapiro.test(lm_aug$.resid)
+
+# c) check for large leverage points
+lm_aug %>%
+    .$.hat %>% 
+    gghalfnorm::gghalfnorm()
+
+lmod %>% get_large_lev_points()
+
+## there are some points which are a bit larger than our cutoff point.
+
+lmod %>% gen_leverage_plots()
+
+## lets see the difference removing point 26 makes
+lmod_2 <- lm(taste ~ ., cheddar %>% slice(-26))
+lmod_2 %>% gen_leverage_plots()
+
+# d) check for outliers
+lmod %>% get_adj_outliers()
+
+# e) check for influential points
+lm_aug$.cooksd %>%
+    gghalfnorm::gghalfnorm()
+
+## our most influential point is number 15
+lmod_2 <- lm(taste ~ ., cheddar %>% slice(-15))
+
+compare_summaries(lmod, lmod_2) %>%
+    select(1, 5)
+
+# f) check for structure of the relationship between the predictors and response
+cheddar %>% gen_all_partial("taste")
+lmod %>% gen_all_partial_resids()
+```
+
+6. 
+
+```{r}
+data(happy, package = "faraway")
+happy %<>% as_tibble()
+lmod <- lm(happy ~ ., happy)
+lm_aug <- lmod %>% augment()
+
+# a) check the constant variance assumption
+lm_aug %>%
+    diag_plot(.fitted, .resid)
+
+lm_aug %>%
+    diag_plot(.fitted, sqrt(abs(.resid)))
+
+lm(sqrt(abs(.resid)) ~ .fitted, lm_aug) %>% summary()
+
+# b) check the normality assumption
+lm_aug %>%
+    qq_plot(choice = .resid, title = "Residuals")
+shapiro.test(lm_aug$.resid)
+
+# c) check for large leverage points
+lmod %>% get_large_lev_points()
+lmod %>% gen_leverage_plots()
+
+lmod_2 <- lm(happy ~ ., happy %>% slice(-6, -7))
+lmod_2 %>% gen_leverage_plots()
+
+# d) check for outliers
+lmod %>% get_adj_outliers()
+
+happy %>%
+    slice(36)
+
+lmod_2 <- lm(happy ~ ., happy %>% slice(-36))
+
+compare_summaries(lmod, lmod_2) %>%
+    select(1, 5)
+
+## without that particular point both money and work lose significance
+
+# e) check for influential points
 
 ```
