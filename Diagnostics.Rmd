@@ -671,52 +671,60 @@ dfbeta(lmod) %>%
     select(pop15) %>%
     nrow()
 
-loo_diff <- function(model, param) {
-    differences <- dfbeta(model) %>%
-        as_tibble() %>%
-        select({{param}})
+## loo_diff <- function(model, param) {
+##     differences <- dfbeta(model) %>%
+##         as_tibble() %>%
+##         select({{param}})
+
+##     differences %>%
+##         mutate(Index = row_number()) %>%
+##         ggplot(aes(x = Index, y = {{param}})) +
+##         geom_point() +
+##         geom_hline(yintercept = 0, lty = 2) +
+##         ggtitle(latex2exp::TeX("$\\hat{\\beta} - \\hat{\\beta_{(i)}}$"),
+##                 subtitle = "Changes in Coefficient per Datum") +
+##         scale_x_continuous(breaks = seq_len(nrow(differences)))
+## }
+
+loo_diff <- function(model, param, top_n = 3) {
+    quo_param <- expr(param) %>% eval()
+
+    (differences <- dfbeta(model) %>%
+         as_tibble() %>%
+         select({{quo_param}}) %>%
+         rename(Value = 1) %>%
+         mutate(Index = row_number()))
+
+    # get max differences
+    differences %>%
+        mutate(abs_max = abs(Value)) %>%
+        arrange(desc(abs_max)) %>%
+        head(top_n) %>%
+        select(Value, Index) -> top_x
 
     differences %>%
-        mutate(Index = row_number()) %>%
-        ggplot(aes(x = Index, y = {{param}})) +
+        ggplot(aes(x = Index, y = Value)) +
         geom_point() +
-        geom_hline(yintercept = 0) +
-        ggtitle(latex2exp::TeX("$\\hat{\\beta} - \\hat{\\beta_{(i)}}$"),
-                subtitle = "Changes in Coefficient per Datum") +
+        geom_point(data = top_x, aes(x = Index, y = Value),
+                   color = "red", shape = 1, size = 5, alpha = 0.7) +
+        geom_hline(yintercept = 0, lty = 2, alpha = 0.5) +
+#        ylab(param) +
+        ggtitle(subtitle = latex2exp::TeX("$\\hat{\\beta} - \\hat{\\beta_{(i)}}$"),
+                label = paste0(param, " | Changes in Coefficient per Datum")) +
         scale_x_continuous(breaks = seq_len(nrow(differences)))
 }
 
-loo_params <- function(model) {
+loo_params <- function(model, top_n = 3) {
     model %>%
         tidy() %>%
         pull(1) %>%
         .[2:length(.)] %>%
-        parse_quos(env = model$model) %>%
-        map(., ~ loo_diff(model, .x))
+        map(., ~ loo_diff(model, .x, top_n)) -> plots_out
+
+    cowplot::plot_grid(plotlist = plots_out, ncol = 2)
 }
 
-lmod %>%
-    tidy() %>%
-    pull(1) %>%
-    .[2:length(.)] %>%
-    parse_quos(env = lmod$model) -> quos_out
-
-loo_diff(lmod, eval_tidy(expr = quo_get_expr(quos_out[[1]]),
-                         env = quo_get_env(quos_out[[1]])))
-
-quos_out %>%
-    map(., ~ loo_diff(lmod, quo_get_expr(.x)))
-
-lmod$model %>% as_tibble()
-
-loo_diff(lmod, names(eval_tidy(parse_expr("dpi"),
-                         data = as_tibble(lmod$model))))
-
-loo_diff(lmod, pop75)
-
-lmod %>%
-    loo_params()
-
+lmod %>% loo_params()
 ```
 
 The 23rd row sticks out as causing a large shift in the coefficient of pop_15. We can examine the effect of removing it 
@@ -998,7 +1006,6 @@ p2 +
 
 We see that there is no linear trend in our values. 
 
-
 b. Check the normality assumption
 
 ```{r}
@@ -1163,7 +1170,7 @@ In the model we are looking at, our response variable is total
 # partial regression plots
 sat %>%
     select(c("total", "expend", "salary", "ratio", "takers")) %>%
-    gen_all_partial_rp(response = "total")
+    gen_all_partial("total")
 ```
 
 The plot above shows us the effect of regression y on all x except the variable. This lends interpretation to the coefficients of the variables.
@@ -1247,12 +1254,8 @@ lmod %>%
 lm_aug %>%
     qq_plot(choice = .resid, title = "Residuals for LM")
 
-teengamb %>%
-    summary()
-
 ## looks good. Let's back it up with a Shapiro-Wilk's test
 shapiro.test(x = lm_aug$.resid)
-
 
 ## this is saying it is very non normal. Let's try again without the outlier (likely mistaken) value of 156.
 lm_aug %>%
@@ -1343,6 +1346,9 @@ compare_summaries(lmod, lmod_2) %>%
     select(1, 2)
 
 ## the significance of none of the variables changed and the coefficients only changed slightly
+
+lmod %>%
+    loo_params()
 
 # f) Check the structure of the relationship between the predictors and the response
 gen_all_partial(teengamb, response = "gamble")
@@ -1443,6 +1449,9 @@ compare_summaries(lmod, lmod_2) %>%
     select(1, 5)
 
 ## very little change
+
+lmod %>%
+    loo_params()
 
 # f) check the structure of the model
 prostate %>% gen_all_partial(response = "lpsa") # looks good
@@ -1639,5 +1648,35 @@ compare_summaries(lmod, lmod_2) %>%
 ## without that particular point both money and work lose significance
 
 # e) check for influential points
+lm_aug %>%
+    .$.cooksd %>%
+    gghalfnorm::gghalfnorm()
+
+lmod %>%
+    loo_params()
+
+## 36 is influential in sex, money and work, but not love
+
+# f) Check the structure of the relationship between parameters and response
+gen_all_partial(happy, "happy")
+
+## everything looks linear
+
+gen_all_partial_resids(lmod)
+
+## none of the residuals look influential
+```
+
+7. 
+
+```{r}
+data(tvdoctor, package = "faraway")
+
+tvdoctor %<>%
+    as_tibble()
+
+lmod <- lm(life ~ ., tvdoctor)
+
+# Check for nonconstant variance
 
 ```
