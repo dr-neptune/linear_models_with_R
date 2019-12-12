@@ -758,7 +758,6 @@ Normally we check the plots of y against each $x_i$ before model fitting. The dr
 Similarly if we regress $x_i$ on all x except $x_i$, and get residuals $\hat{\gamma}$, we have the effect of each $x_i$ with the other X-effect taken out. 
 
 ```{r}
-
 partial_regression_plot <- function(data, response, var) {
     # get vars that aren't our var
     vars <- colnames(data) %>%
@@ -842,7 +841,7 @@ gen_all_partial_resids <- function(model) {
         .[2:nrow(.), 1] %>%
         flatten_chr() %>%
         map(sym) %>%
-        map(., ~ partial_residual_plot(lmod, !!.x)) -> pr_plots
+        map(., ~ partial_residual_plot(model, !!.x)) -> pr_plots
 
     plot_grid(plotlist = pr_plots, ncol = 2)
 }
@@ -1676,7 +1675,82 @@ tvdoctor %<>%
     as_tibble()
 
 lmod <- lm(life ~ ., tvdoctor)
+lm_aug <- lmod %>% augment()
+
+# standardize it all
+tvd <- tvdoctor %>%
+    scale() %>%
+    as_tibble()
+
+lmod <- lm(life ~ ., tvdoctor)
+lm_aug <- lmod %>% augment()
 
 # Check for nonconstant variance
+lm_aug %>%
+    diag_plot(.fitted, .resid)
 
+lm_aug %>%
+    filter(between(.fitted, 68, 70.3)) %>%
+    diag_plot(.fitted, sqrt(abs(.resid)))
+
+# the residuals look nonconstant because they are clustered about 70. This is due to the intercept coefficient being 70, and the beta coefficients for our predictors being small and negative.
+
+# check the normality assumption
+lm_aug %>%
+    qq_plot(.resid, "Residuals")
+
+shapiro.test(lm_aug$.resid)
+
+# check for large leverage points
+lmod %>% get_large_lev_points()
+lmod %>% gen_leverage_plots()
+
+# index 1 is an enormous leverage point
+lmod_2 <- lm(life ~ ., tvdoctor %>% slice(-8))
+compare_summaries(lmod, lmod_2)
+lmod_2 %>% gen_leverage_plots()
+
+# the majority of the change from eliminating the point is in the statistic, with a change on the intercept term of about 3.7. Given the magnitude of the intercept compared to the other coefficients, this could be a reasonably large change
+
+# check for outliers
+lmod %>% get_adj_outliers()
+
+## our only outlier with the bonferroni correction is the one at index 8
+tvdoctor %>% slice(8)
+tvdoctor %>% summary()
+## this is an insane amount of tv and doctor
+
+# check for influential points
+lm_aug %>%
+    .$.cooksd %>%
+    gghalfnorm::gghalfnorm()
+
+lmod %>%
+    loo_params()
+
+# check the relationship between the structure of the model and the data
+gen_all_partial(tvdoctor, "life")
+gen_all_partial(tvdoctor %>% filter(tv < 20), "life")
+
+# the linearity in tv only makes sense when tv < 20
+lmod %>% gen_all_partial_resids()
+
+tvdoc_2 <- tvdoctor %>%
+    filter(tv < 25 &
+           doctor < 2900)
+
+tvdoc_2 %>% summary()
+
+lmod_2 <- lm(life ~ tv + doctor, data = tvdoc_2)
+
+lmod_2 %>% gen_all_partial_resids()
+```
+
+8. 
+
+```{r}
+data(divusa, package = "faraway")
+divusa %<>% as_tibble()
+lmod <- lm(divorce ~ unemployed + femlab + marriage + birth + military, divusa)
+lm_aug <- lmod %>% augment()
 ```
