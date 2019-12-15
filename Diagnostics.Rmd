@@ -1754,3 +1754,35 @@ divusa %<>% as_tibble()
 lmod <- lm(divorce ~ unemployed + femlab + marriage + birth + military, divusa)
 lm_aug <- lmod %>% augment()
 ```
+
+
+```{r}
+# check for autocorrelation
+# successive residual plot
+lm_aug %>% make_successive_res_plot()
+# model correlation
+get_autocorrelation_slope <- function(model, p_val_cutoff = 0.05) {
+    model %>%
+        augment() %>%
+        mutate(lead = .resid[2:nrow(.)] %>% append(0),
+               lag = .resid[1:(nrow(.) - 1)] %>% append(0)) %>%
+        lm(lead ~ lag -1, .) %>%
+        summary() %>%
+        tidy() %>%
+        mutate(detected = ifelse(p.value < p_val_cutoff,
+                                 TRUE,
+                                 FALSE)) %>%
+        select(detected, everything())
+}
+
+lmod %>%
+    get_autocorrelation_slope()
+
+# durbin watson statistic
+lmtest::dwtest(divorce ~
+                   unemployed + femlab + marriage +
+                   birth + military, data = divusa) %>% tidy()
+
+## all three of these signify that there is autocorrelation
+```
+
