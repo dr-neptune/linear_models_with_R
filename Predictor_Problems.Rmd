@@ -4,6 +4,12 @@
 library(tidyverse)
 library(faraway)
 library(magrittr)
+library(furrr)
+library(simex)
+
+# make code run in parallel
+num_cores <- availableCores() - 1
+plan(multiprocess,  workers = num_cores)
 ```
 
 ## Errors in the Predictors
@@ -125,36 +131,61 @@ create_ggplot_mapped_gif <- function(plotlist, title = "output") {
     gif_file(glue("{title}.gif"))
 }
 
-pred_errors %>%
-    create_ggplot_mapped_gif(title = "pred_errors")
+## pred_errors %>%
+##     create_ggplot_mapped_gif(title = "pred_errors")
 ```
 
 We see that the slope becomes shallower as the amount of noise increases. 
 
-Suppose we knew that a predictor in the original data had been measured with a known error variance. Given what we have seen in the know measurement error models, we might extrapolate back to suggest an estimate of the slope under no measurement error. This is the idea behind SIMEX.
+Suppose we knew that a predictor in the original data had been measured with a known error variance. Given what we have seen in the known measurement error models, we might extrapolate back to suggest an estimate of the slope under no measurement error. This is the idea behind SIMEX.
 
 ```{r}
 # simulate the effects of adding normal random error with variances from 0.1:0.5
+set.seed(8888)
 
 # FIX THIS
+slopes <- future_map(rep(1:5/10, each = 1000),
+              ~ lm(dist ~ I(speed + sqrt(.x) * rnorm(50)),
+                   cars)$coef[2]) %>%
+    set_names(rep(1:5/10, each = 1000)) %>%
+    enframe() %>%
+    pivot_wider() %>%
+    unnest() %>%
+    unnest()
 
-## slopes <- future_map(rep(1:5/10, each = 1000),
-##               ~ lm(dist ~ I(speed + sqrt(.x) * rnorm(50)),
-##                    cars)$coefficient[[2]]) %>% 
-##     flatten_dbl() %>%
-##     set_names(rep(c(1:5), times = 1000)) %>%
-##     enframe() %>%
-##     pivot_wider() %>%
-##     unnest()
+slopes %>%
+    colMeans() %>%
+    prepend(coef(lmod)[2]) -> betas
 
-## slopes %>%
-##     colMeans()
+variances <- c(0, 1:5 / 10) + 0.5
 
+gv_tib <- tibble("betas" = betas,
+                 "variances" = variances)
 
-# plot the mean slopes for each variance
-betas <- c(coef(lmod)[2], colMeans(matrix(slopes, nrow = 1000)))
+gv <- lm(betas ~ variances, gv_tib)
 
-# add in assumption of 0.5 variance
-variances <- c(0, 1:5/10) + 0.5
-plot(variances, betas)
+gv %>%
+    plot_lmod(x = variances, y = betas) +
+    xlim(c(0, 1)) + ylim(c(3.86, 4))
 ```
+
+From the above we see that the value of $\hat{\beta}$ at variance equal to 0 (no measurement error) is almost 4.
+
+```{r}
+lmod <- lm(dist ~ speed, cars, x = TRUE)
+(simout <- simex(lmod, "speed", 0.5, B = 1000))
+```
+
+Essentially: 
+
+- Assume fixed measurement error variance 
+- Simulate adding more variance 
+- Fit a linear model to extrapolate true intercept 
+
+```{r}
+# create a function which shows extrapolations.
+# input a list of variances and output actual intercepts and plots of differences
+```
+
+## Changes of Scale
+
