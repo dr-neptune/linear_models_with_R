@@ -134,5 +134,27 @@ We see that the slope becomes shallower as the amount of noise increases.
 Suppose we knew that a predictor in the original data had been measured with a known error variance. Given what we have seen in the know measurement error models, we might extrapolate back to suggest an estimate of the slope under no measurement error. This is the idea behind SIMEX.
 
 ```{r}
+# simulate the effects of adding normal random error with variances from 0.1:0.5
 
+# FIX THIS
+
+## slopes <- future_map(rep(1:5/10, each = 1000),
+##               ~ lm(dist ~ I(speed + sqrt(.x) * rnorm(50)),
+##                    cars)$coefficient[[2]]) %>% 
+##     flatten_dbl() %>%
+##     set_names(rep(c(1:5), times = 1000)) %>%
+##     enframe() %>%
+##     pivot_wider() %>%
+##     unnest()
+
+## slopes %>%
+##     colMeans()
+
+
+# plot the mean slopes for each variance
+betas <- c(coef(lmod)[2], colMeans(matrix(slopes, nrow = 1000)))
+
+# add in assumption of 0.5 variance
+variances <- c(0, 1:5/10) + 0.5
+plot(variances, betas)
 ```
