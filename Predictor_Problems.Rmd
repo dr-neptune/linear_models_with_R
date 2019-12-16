@@ -4,6 +4,7 @@
 library(tidyverse)
 library(faraway)
 library(magrittr)
+library(broom)
 library(furrr)
 library(simex)
 
@@ -143,7 +144,6 @@ Suppose we knew that a predictor in the original data had been measured with a k
 # simulate the effects of adding normal random error with variances from 0.1:0.5
 set.seed(8888)
 
-# FIX THIS
 slopes <- future_map(rep(1:5/10, each = 1000),
               ~ lm(dist ~ I(speed + sqrt(.x) * rnorm(50)),
                    cars)$coef[2]) %>%
@@ -185,7 +185,73 @@ Essentially:
 ```{r}
 # create a function which shows extrapolations.
 # input a list of variances and output actual intercepts and plots of differences
+## plot(simout)
+## lmod_2 <- lm(mpg ~ ., mtcars)
+## lmod_2 %>% tidy() %>% slice(2:nrow(.)) %>% pull(1) %>% simex(lmod_2, SIMEXvariable = ., measurement.error = rep(0.5, 10))
 ```
 
 ## Changes of Scale
+
+A change of scale is often helpful when the variables take values which are all very large or very small. It can also be helpful to ensure numerical stability. 
+
+Suppose we re-express $x_i$ as $(x_i + a)/b$. Rescaling $x_i$ leaves the t and F-tests and $\hat{\sigma}^2$ and $R^2$ unchanged, and $\hat{\beta_i} \to b \hat{\beta_i}$.
+
+```{r}
+data(savings, package = "faraway")
+savings %<>% as_tibble()
+lmod <- lm(sr ~ ., savings)
+lmod %>% tidy()
+```
+
+Our coefficient for dpi (income) is very small. We can measure in thousands of dollars instead.
+
+```{r}
+savings %>%
+    mutate(dpi = dpi / 1000) %>%
+    lm(sr ~ ., .) -> lmod_2
+
+lmod_2 %>% tidy()
+```
+
+We could also convert all the variables to standard units (mean 0 and variance 1) using scale()
+
+```{r}
+savings %>%
+    mutate_all(scale) %>%
+    lm(sr ~ ., .) -> lmod_3
+
+lmod_3 %>% tidy()
+```
+
+In the model above, we see that the intercept is essentially zero. This is because the regression plane always runs through the point of the averages, which because of the centering, is now at the origin. 
+
+This allows the predictors and the response to be placed on a comparable scale. It also allows the coefficients to be viewed as a kind of partial correlation, bound in [-1, 1]. The interpretation effect of this scaling is that the regression coefficients now represent the effect of one standard unit increase in the predictor on the response in standard units. 
+
+When the predictors are on comparable scales, it can be helpful to construct a plot of the estimates with confidence intervals.
+
+```{r}
+coef_confint_plot <- function(lmod, prescale = TRUE) {
+    if (prescale) {
+        lmod$model %>%
+            scale() %>%
+            as_tibble() %>%
+            lm(eval(lmod$call[[2]]), .) -> lmod
+    }
+
+    lmod %>%
+        tidy(conf.int = TRUE) %>%
+        slice(2:nrow(.)) %>%
+        ggplot(aes(x = term, y = estimate,
+                   ymin = conf.low, ymax = conf.high)) +
+        geom_pointrange()
+}
+
+lmod %>% coef_confint_plot(prescale = FALSE) +
+    ggtitle("Unscaled") +
+    ylim(c(-5, 1)) -> p1
+lmod %>% coef_confint_plot(prescale = TRUE) + ggtitle("Scaled") +
+    ylim(c(-5, 1)) -> p2
+
+cowplot::plot_grid(p1, p2, ncol = 2, align = "vh")
+```
 
