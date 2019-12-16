@@ -1,0 +1,138 @@
+# Problems with the Predictors
+
+```{r}
+library(tidyverse)
+library(faraway)
+library(magrittr)
+```
+
+## Errors in the Predictors
+
+The regression model $Y = X\beta + \epsilon$ allows for Y being measured with error by having the $\epsilon$ term, but what if the X is measured with error? We could have errors in measuring X. 
+
+We must not confused errors in predictors with treating X as a random variable. With observational data we can regard X as a random variable, but the regression inference will nonetheless proceed conditionally on a fixed value of X. 
+
+Suppose that what we observe is ($x_i^O, y_i^O$) for $i = 1, ..., n$ which are related to the true values ($x_i^A, y_i^A$): $y_i^A = y_i^A + \epsilon_i$, $x_i^A = x_i^A + \delta_i$ where the errors $\epsilon_i$ and $\delta_i$ are independent. 
+
+The true underlying relationship is $y_I^A = \beta_0 + \beta_1 x_i^A$, but since we only see our observed values what we get is $y_i^O = \beta_0 + \beta_i x_i^O + (\epsilon_i - \beta_1 \delta_1)$. 
+
+Suppose we use least squares to estimate $\beta_0$ and $\beta_1$. Let's assume that $E\epsilon_i = E\delta_i = 0$ and that $var \epsilon_i = \sigma_\epsilon^2$, $var \delta_i = \sigma_\delta^2$. Let $\sigma_x^2 = \sum (x_i^A - \bar{x}^A)^2 / n$ and $\sigma_{x\delta} = cov(x^A, \delta)$. For observational data, $\sigma_x^2$ is almost the sample variance of $X^A$ while for a controlled experiment we can view it as a numerical measure of the spread of the design. A similar distinction should be made for $\sigma_{x\delta}$, but most often we can just assume that this is zero. 
+
+Now $\hat{\beta_1} = \frac{\sum (x_i - \bar{x} y_i)}{\sum (x_i - \bar{x})^2}$ and after some calculation we get $E \hat{\beta_1} = \beta_1 \frac{\sigma_x^2 + \sigma_{x\delta}}{\sigma_x^2 + \sigma_\delta^2 + 2\sigma_{x\delta}}$. 
+
+There are two main special cases: 
+
+1. If there is no relationship between $X^A$ and $\delta$ and $\sigma_{x\delta} = 0$, this simplifies to $E\hat{\beta_1} = \beta_1 \frac{1}{1 + \sigma_\delta^2 / \sigma_x^2}$. So $\hat{\beta_1}$ will be biased toward zero, regardless of the sample size. If $\sigma_\delta^2$ is small relative to $\sigma_x^2$, we can effectively ignore the problem. In other words, if the variability in the errors of observation of $X$ is small relative to the range of $X$, then we needn't worry. For multiple predictors, measurement erros also bias the $\hat{\beta}$ in the direction of 0. 
+
+2. In controlled experiments, we need to distinguish two ways in which error in x may arise. In the first case, we measure x with a true value $x^A$ and observed value $x^O$. If we repeat the measurement, we would have the same true value $x^A$, but a different $x^O$. In the second case, we fix $x^O$. Now if we repeat this, we would get the same $x^O$, but our true value $x^A$ would be different. In this latter case we have $\sigma_{x\delta} = cov(X^0 - \delta, \delta) = -\sigma_\delta^2$, and then we would have $E\hat{\beta_1} = \beta_1$,  and unbiased estimate. What this is doing is effectively reversing the roles of $x^A$ and $X^O$, and if we get to observe the true X, then we will get an unbiased estimate of $\beta_1$.
+
+In cases where the error in X can not be ignored, we should consider alternatives to the least squares estimation of $\beta$. We can write the simple least squares regression equation as $\frac{y - \bar{y}}{SD_y} = r\frac{x - \bar{x}}{SD_x}$ such that $\hat{\beta_1} = r\frac{SD_y}{SD_x}$. 
+
+Since we have errors in both x and y in our problem, we can argue that neither one in particular deserves the role of response or predictor and so the equation should be the same either way. One way to achive this is to set $\hat{\beta_1} = \frac{SD_y}{SD_x}$. This is known as the *geometric mean functional relationship*. 
+
+Another approach is to use the SIMEX method of Cook and Stefanski (1994).
+
+```{r}
+data(cars)
+cars %<>% as_tibble()
+lmod <- lm(dist ~ speed, cars)
+
+plot_lmod <- function(lmod, x, y) {
+    lmod$model %>%
+        as_tibble() %>%
+        ggplot(aes(x = {{x}}, y = {{y}})) +
+        geom_point() +
+        geom_abline(intercept = lmod$coefficients[[1]],
+                    slope = lmod$coefficients[[2]],
+                    color = "mediumpurple",
+                    lty = 2,
+                    alpha = 0.8)
+}
+
+lmod %>%
+    plot_lmod(speed, dist)
+```
+
+Let's focus on the effects of adding measurement error to the predictor.
+
+```{r}
+# fit model with no noise as a baseline 
+lmod_2 <- lm(dist ~ I(speed + rnorm(50)), cars)
+
+gen_noise <- function(noise_amt) {
+    lmod <- lm(dist ~ I(speed + noise_amt * rnorm(50)), cars)
+    lmod$noise_amount <- noise_amt
+    return(lmod)
+}
+
+# fit models with noise
+seq_len(10) %>%
+    map(., ~ gen_noise(.x)) -> noise_lmods 
+
+# save base plot
+lmod %>%
+    plot_lmod(speed, dist) -> p1
+
+# create noise plots with additional lines 
+noise_lmods %>%
+    map(., ~ p1 +
+               geom_abline(intercept = .x$coefficients[[1]],
+                           slope = .x$coefficients[[2]],
+                           color = "firebrick",
+                           lty = 2,
+                           alpha = 0.8) +
+        ggtitle(glue::glue("Noise : {.x$noise_amount} * rnorm(50) on Speed"))) -> pred_errors
+
+show_variance_of_plot <- function(lmods) {    
+    add_lines <- function(lmod) {
+        zoop <- geom_abline(intercept = lmod$coefficients[[1]],
+                            slope = lmod$coefficients[[2]],
+                            color = "firebrick",
+                            lty = 2,
+                            alpha = 0.3)
+        
+        return(zoop)
+    }
+
+    p2 <- p1
+    for (i in seq_len(length(noise_lmods))) {
+        p2 <- p2 + 
+            add_lines(noise_lmods[[i]])
+    }
+
+    p2
+}
+
+noise_lmods %>%
+    show_variance_of_plot()
+
+create_ggplot_mapped_gif <- function(plotlist, title = "output") {
+    require(gganimate)
+    require(glue)
+    
+    dir.create("temp")
+    
+    plotlist %>%
+        future_map2(.x = ., .y = seq_len(length(plotlist)),
+                    ~ plotlist[[.y]] %>%
+                        ggsave(plot = .,
+                               filename = glue("temp/frame{.y}.png")))
+
+    system(glue("convert -delay 50 temp/*.png {title}.gif"))
+
+    fs::dir_delete("temp")
+    
+    gif_file(glue("{title}.gif"))
+}
+
+pred_errors %>%
+    create_ggplot_mapped_gif(title = "pred_errors")
+```
+
+We see that the slope becomes shallower as the amount of noise increases. 
+
+Suppose we knew that a predictor in the original data had been measured with a known error variance. Given what we have seen in the know measurement error models, we might extrapolate back to suggest an estimate of the slope under no measurement error. This is the idea behind SIMEX.
+
+```{r}
+
+```
