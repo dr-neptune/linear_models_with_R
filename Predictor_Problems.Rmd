@@ -312,3 +312,72 @@ Another way to achieve a similar effect is to use a +-1 coding rather than 0/1 s
 
 ## Collinearity
 
+When some predictors are linear combinations of others, then $X^TX$ is singular and we have a lack of identifiability. Another name for this problem is exact collinearity -- there is no unique least squared estimate of $\beta$. The solution may require removing some predictors.
+
+A more challenging problem arises when $X^TX$ is close to singular, but not exactly so. This is collinearity or multicollinearity. This leads to imprecise estimates of $\beta$. Generally we have problems identifying the correct sign of beta, the standard errors become inflated and the fit becomes sensitive to small changes in y. 
+
+We can detect it in several ways: 
+
+1. Examine the correlation matrix of the predictors for large pairwise collinearities
+2. A regression of $x_i$ on all other predictors gives $R_i^2$. A value close to one indicates that one predictor can almost be predicted exactly by a linear combination of other predictors. We can repeat this for all predictors and possible discover the offending linear combinations by examining the regression coefficients of these regressions.
+3. Examine the eigenvalues of $X^TX, \lambda_1 \geq ... \geq \lambda_p \geq 0$. Zero eigenvalues denote exact collinearity, which the presence of some small eigenvalues indicate multicollinearity. The condition number $\Kappa$ measures the relative sizes of the eigenvalues and is defined as $\Kappa = \sqrt(\frac{\lambda_1}{\lambda_p})$, where $\Kappa \geq 30$ is considered large. Other condition numbers like $\sqrt(\lambda_1 / \lambda_i)$ might also be useful because they indicate whether more than just one independent linear combination is to blame. 
+
+We can see the effect of collinearity with this expression for $\hat{\beta_j}$:
+
+$var \hat{\beta_j} = \sigma^2 (\frac{1}{1 - R_j^2}) \frac{1}{\sum_i (x_{ij} - \bar{x})^2}$
+
+We see that if the predictor $x_j$ does not vary much, then the variance of $\hat{\beta_j}$ will be large. If $R_j^2$ is close to one, then the variance inflation factor $(1 - R_j^2)^{-1}$ will be large and so var $\hat{\beta_j}$ will also be large. 
+
+```{r}
+data(seatpos, package = "faraway")
+seatpos %<>% as_tibble()
+lmod <- lm(hipcenter ~ ., seatpos)
+lmod %>% glance()
+lmod %>% tidy()
+```
+
+We see that none of the predictors is significant, but the R^2 is reasonably large. This model shows signs of collinearity.
+
+Let's take a look at pairwise correlations:
+
+```{r}
+library(corrr)
+
+seatpos %>%
+    correlate() %>%
+    focus(-hipcenter, mirror = TRUE) %>%
+    rearrange() %>%
+    shave() -> cor_table
+
+cor_table %>% fashion()
+cor_table %>% rplot()
+```
+
+We see several large pairwise correlations between predictors.
+
+Now we can check the eigendecomposition of $X^TX$ (not including the intercept in X)
+
+```{r}
+x <- model.matrix(lmod)[, -1]
+e <- eigen(t(x) %*% x)
+e$values
+sqrt(e$values[1] / e$values)
+```
+
+There is a very large range in the eigenvalues and several condition numbers are large. This means that problems are being caused by more than just one linear combination. 
+
+Now we can check the variance inflation factors
+
+```{r}
+# for the first variable
+(summary(lm(x[,1] ~ x[,-1]))$r.squared -> vif_1)
+1 / (1 - vif_1)
+```
+
+This is moderate in size. The VIF for orthogonal predictors is one. 
+
+```{r}
+# predict all VIFs in one go
+vif(x)
+```
+
