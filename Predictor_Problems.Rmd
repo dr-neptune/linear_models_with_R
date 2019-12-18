@@ -133,14 +133,6 @@ create_ggplot_mapped_gif <- function(plotlist, title = "output") {
 }
 
 ## pred_errors %>%
-##     create_ggplot_mapped_gif(title = "pred_errors")
-```
-
-We see that the slope becomes shallower as the amount of noise increases. 
-
-Suppose we knew that a predictor in the original data had been measured with a known error variance. Given what we have seen in the known measurement error models, we might extrapolate back to suggest an estimate of the slope under no measurement error. This is the idea behind SIMEX.
-
-```{r}
 # simulate the effects of adding normal random error with variances from 0.1:0.5
 set.seed(8888)
 
@@ -167,6 +159,47 @@ gv <- lm(betas ~ variances, gv_tib)
 gv %>%
     plot_lmod(x = variances, y = betas) +
     xlim(c(0, 1)) + ylim(c(3.86, 4))
+
+merr <- 30
+
+merr * c(1.1, 1.2, 1.3, 1.4, 1.5)
+
+lmod$call[[2]][[2]]
+
+##FIX THIS 
+homemade_simex <- function(lmod, variable, measurement_err, numreps) {
+    set.seed(8888)
+
+    measurement_err * c(1.1, 1.2, 1.3, 1.4, 1.5) -> err_vec
+    response <- as.character(lmod$call[[2]][[2]])
+    form <- glue::glue("{response} ~ I({variable} + sqrt({.x}) * rnorm(50))")
+    
+    slopes <- future_map(rep(err_vec, each = numreps),
+                         ~ lm(as.formula(form),
+                              cars)$coef[2]) %>%
+        set_names(rep(err_vec, each = numreps)) %>%
+        enframe() %>%
+        pivot_wider() %>%
+        unnest() %>%
+        unnest()
+    
+    slopes %>%
+        colMeans() %>%
+        prepend(coef(lmod)[2]) -> betas
+    
+    variances <- c(0, err_vec) + measurement_err
+    
+    gv_tib <- tibble("betas" = betas,
+                     "variances" = variances)
+    
+    gv <- lm(betas ~ variances, gv_tib)
+    
+    gv %>%
+        plot_lmod(x = variances, y = betas) +
+        xlim(c(0, 1)) + ylim(c(3.86, 4))
+}
+
+homemade_simex(lmod, "speed", 0.5, 1000)
 ```
 
 From the above we see that the value of $\hat{\beta}$ at variance equal to 0 (no measurement error) is almost 4.
@@ -181,6 +214,14 @@ Essentially:
 - Assume fixed measurement error variance 
 - Simulate adding more variance 
 - Fit a linear model to extrapolate true intercept 
+
+```{r}
+##     create_ggplot_mapped_gif(title = "pred_errors")
+```
+
+We see that the slope becomes shallower as the amount of noise increases. 
+
+Suppose we knew that a predictor in the original data had been measured with a known error variance. Given what we have seen in the known measurement error models, we might extrapolate back to suggest an estimate of the slope under no measurement error. This is the idea behind SIMEX.
 
 ```{r}
 # create a function which shows extrapolations.
@@ -355,29 +396,153 @@ cor_table %>% rplot()
 
 We see several large pairwise correlations between predictors.
 
+We can test the effect of regression on x_i for all predictors
+
+```{r}
+seatpos %>% names() -> d_names
+
+get_collinearity_r_sq <- function(data) {
+    d_names <- data %>% names()
+
+    d_names %>%
+        paste("~ .") %>% 
+        map(as.formula) %>%
+        map_dbl(., ~ lm(.x, data) %>%
+                       glance() %>%
+                       pull(1)) %>%
+        tibble("predictor" = d_names, "r_squared" = .) %>%
+        mutate(VIF = (1 / (1 - r_squared))) %>% 
+        arrange(desc(r_squared))
+}
+
+seatpos %>%
+    get_collinearity_r_sq()
+```
+
+Things are not looking good for Ht and HtShoes.
+
+We can interpret `r sqrt(308)` as telling us that the standard error for height with shoes is 17.5 times larger than it would have been without collinearity. We cannot apply this as a correction because we did not actually observe orthogonal data, but it does give us a sense of the size of the effect. 
+
 Now we can check the eigendecomposition of $X^TX$ (not including the intercept in X)
 
 ```{r}
-x <- model.matrix(lmod)[, -1]
-e <- eigen(t(x) %*% x)
-e$values
-sqrt(e$values[1] / e$values)
+eigen_decomposition <- function(model) {
+    mm <- model %>% model.matrix() %>% .[, -1]
+    e <- eigen(t(mm) %*% mm)
+    cat("Values:\n")
+    print(e$values)
+    cat("Proportions:\n")
+    print(sqrt(e$values[1] / e$values))
+}
+
+lmod %>% eigen_decomposition()
 ```
 
-There is a very large range in the eigenvalues and several condition numbers are large. This means that problems are being caused by more than just one linear combination. 
+There is a very large range in the eigenvalues and several condition numbers are large. This means that problems are being caused by more than just one linear  combination. 
 
-Now we can check the variance inflation factors
+There is substantial instability in these estimates. Suppose the measurement for hipcenter has a SD of 10mm. Let's see what happens when we add a random perturbation of this size to the response:
 
 ```{r}
-# for the first variable
-(summary(lm(x[,1] ~ x[,-1]))$r.squared -> vif_1)
-1 / (1 - vif_1)
+compare_summaries <- function(m1, m2, remove_intercept = FALSE) {
+    require(rlang)
+
+    m1 %<>% tidy() %>%
+        set_names(paste(colnames(.), "1", sep = "_")) %>%
+        mutate_if(is.double, round, 4)
+
+    m2 %<>% tidy() %>%
+        set_names(paste(colnames(.), "2", sep = "_")) %>%
+        mutate_if(is.double, round, 4)
+
+    if (remove_intercept) {
+        m1 %<>%
+            slice(2:nrow(.))
+
+        m2 %<>%
+            slice(2:nrow(.))
+    }
+    
+    m_tbl <- bind_cols(m1, m2)
+
+    create_eqn <- function(name) {
+        evaluator <- function(exp) {
+            return(eval_tidy(parse_expr(exp),
+                             data = m_tbl))
+        }
+
+        name_1 <- paste0(name, "_1")
+        name_2 <- paste0(name, "_2")
+
+        return(paste0("|",
+                      evaluator(name_1), " - ",
+                      evaluator(name_2), "| = ",
+                      abs(evaluator(name_1) - evaluator(name_2))))
+    }
+
+    out_tbl <- m_tbl %>%
+        mutate(estimate = create_eqn("estimate"),
+               std.error = create_eqn("std.error"),
+               statistic = create_eqn("statistic"),
+               p.value = create_eqn("p.value")) %>%
+        select(term = term_1, estimate, std.error, statistic, p.value)
+
+    # get sums of digits
+    out_tbl %>%
+        map(., ~ str_extract(.x, pattern = "[[:digit:]]+\\.[[:digit:]]+$") %>%
+            as.double() %>% na.omit()) -> digitz
+
+    sod <- digitz %>% map(., ~.x %>% sum())
+    coef_sod <- digitz %>% map(., ~ .x %>% tail(-1) %>% sum())
+
+    out_tbl %<>%
+        add_row("term" = "Sum of Differences",
+                "estimate" = sod$estimate,
+                "std.error" = sod$std.error,
+                "statistic" = sod$statistic,
+                "p.value" = sod$p.value) %>%
+        add_row("term" = "Coefficient Sum of Differences",
+                "estimate" = coef_sod$estimate,
+                "std.error" = coef_sod$std.error,
+                "statistic" = coef_sod$statistic,
+                "p.value" = coef_sod$p.value)
+
+    return(out_tbl)
+}
+
+lmod_2 <- lm(hipcenter + 10 * rnorm(38) ~ ., seatpos)
+
+compare_summaries(lmod, lmod_2)
+compare_summaries(lmod, lmod_2, remove_intercept = TRUE)
 ```
 
-This is moderate in size. The VIF for orthogonal predictors is one. 
+Although the R^2 and SE are very similar to the previous fit, we see big differences in the estimates (even when accounting for the intercept) and standard error. When we look at our most highly collinear terms, we see very large std errors (Ht and HtShoes). 
+
+We have too many variables that are trying to do the same job of explaining the response. We can reduce the collinearity by carefully removing some of the variables. We can then make a more stable estimation of the coefficients and come to a more secure conclusion regarding the effect of the remaining predictors on the response.
 
 ```{r}
-# predict all VIFs in one go
-vif(x)
+cor_table %>% rplot()
+```
+
+A lot of these are highly correlated: Ht, HtShoes, Seated, Arm, Thigh, Leg. We can focus on just Ht since it is easy to interpret
+
+```{r}
+lmod_3 <- lm(hipcenter ~ Age + Weight + Ht, seatpos)
+lmod_3 %>% glance()
+```
+
+Comparing this with lmod, we see we have a very similar R^2 but many fewer predictors are used. 
+
+The effect of collinearity on prediction is less serious. The accuracy of prediction depends on where the prediction is to be made. The greater the distance is from the observed data, the more unstable the prediction. Collinear data covers a much smaller fraction of the predictor space than it might appear to, so predictions tend to be greater extrapolations than with data that are closer to the orthogonality.
+
+# Exercises
+
+1. 
+
+```{r}
+faithful %<>% as_tibble()
+lmod <- lm(eruptions ~ waiting, faithful)
+
+(simout <- simex(model = lmod, SIMEXvariable = "waiting", measurement.error = 30, B = 100))
+
 ```
 
