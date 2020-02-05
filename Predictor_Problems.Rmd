@@ -544,44 +544,6 @@ lmod <- lm(eruptions ~ waiting, faithful, x = TRUE)
 
 (simout <- simex(model = lmod, SIMEXvariable = "waiting", measurement.error = 30, B = 100))
 
-lmod %>% tidy() %>% pull(2)
-simout$coefficients
-
-tidy(lmod)[2][[1]][1]
-
-faithful %>%
-    ggplot(aes(x = waiting, y = eruptions)) +
-    geom_point() +
-    geom_abline(intercept = simout$coefficients[[1]],
-                slope = simout$coefficients[[2]],
-                color = "blue",
-                lty = 2,
-                alpha = 0.5) +
-    geom_abline(intercept = tidy(lmod)[2][[1]][1],
-                slope = tidy(lmod)[2][[1]][2],
-                color = "mediumpurple",
-                lty = 2,
-                alpha = 0.5) +
-    ggtitle("Fitted Model vs. Simex Adjustment",
-            subtitle = "30 second measurement error on waiting")
-
-lmod$model
-lmod$call %>% as.character() %>% .[2] %>% str_extract("[A-Za-z]+")
-lmod$call %>% as.character() %>% .[2] %>% str_extract("~.*") %>% str_sub(start = 3)
-
-get_terms <- function(lmod) {
-    formula <- lmod$call %>% as.character() %>% .[2]
-
-    y_term <- formula %>% str_extract("[A-Za-z]+")
-    predictors <- formula %>% str_extract("~.*") %>% str_sub(start = 3)
-
-    c(y_term, predictors)
-}
-
-lmod %>% get_terms()
-tidy(lmod) %>% pull(2) %>% .[[1]]
-simout$coefficients[[1]]
-
 compare_simex <- function(simex_model, lmod) {
 
     get_terms <- function(lmod) {
@@ -616,4 +578,45 @@ compare_simex <- function(simex_model, lmod) {
 
 compare_simex(simout, lmod)
 ```
+
+```{r}
+faithful
+
+(simout <- simex(model = lmod, SIMEXvariable = "eruptions", measurement.error = 30, B = 100))
+
+lmod
+
+compare_simex(simout, lmod)
+```
+
+The simex method still does simulations and extrapolates a new set of coefficients, but the output is more similar to the original fit without measurement error accounted for.
+
+3. 
+
+```{r}
+divusa %<>% as_tibble()
+
+# fit a regression model
+lmod <- lm(divorce ~ unemployed + femlab + marriage + birth + military, divusa)
+
+# compute the condition numbers and interpret their meanings
+```
+
+We can examine the eigenvalues of X^TX, \lamba_1,... \lamba_n >= 0. Zero eigenvalues denote exact collinearity while the presence of small eigenvalues indicate multicollinearity.
+
+The condition number Kappa measures the relative sizes of the eigenvalues 
+
+```{r}
+lmod %>% eigen_decomposition()
+```
+
+We see that we have a Kappa of 
+
+```{r}
+sqrt(1 / 25.15)
+```
+
+This is a small eigenvalue, which indicates multicollinearity.
+
+For the same model, compute the VIFs. Is there evidence that collinearity causes some predictors not to be significant?
 
