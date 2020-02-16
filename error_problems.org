@@ -1,0 +1,149 @@
+* Problems with Error
+:PROPERTIES:
+:header-args: :session R-session :results output value :colnames yes
+:END:
+
+#+NAME: round-tbl
+#+BEGIN_SRC emacs-lisp :var tbl="" fmt="%.1f"
+(mapcar (lambda (row)
+          (mapcar (lambda (cell)
+                    (if (numberp cell)
+                        (format fmt cell)
+                      cell))
+                  row))
+        tbl)
+#+end_src
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(tidyverse)
+library(faraway)
+library(broom)
+#+END_SRC
+
+#+RESULTS:
+| x         |
+|-----------|
+| broom     |
+| faraway   |
+| forcats   |
+| stringr   |
+| dplyr     |
+| purrr     |
+| readr     |
+| tidyr     |
+| tibble    |
+| ggplot2   |
+| tidyverse |
+| stats     |
+| graphics  |
+| grDevices |
+| utils     |
+| datasets  |
+| methods   |
+| base      |
+
+We have assumed that the error $\epsilon$ is iid, and we have also assumed that the errors are normally distributed in order to carry out normal statistical inference. These assumptions can often be violated and we must consider alternatives.
+
+- When the errors are dependent, we can use *generalized least squares*
+- When the errors are independent, but not identically distributed, we can use weighted least squares
+- When errors are not normally distributed, we can use *robust regression*
+
+** Generalized Least Squares
+
+We have assumed that $var \epsilon = \sigma^2 I$, but sometimes errors have nonconstant variance or are correlated. Suppose instead that $var \epsilon = \sigma^2 \Sigma$, where $\sigma^2$ is unknown but $\Sigma$ is known. In other words, we know the correlation and relative variance between the errors, but we do not know the absolute scale of the variation. 
+
+We can write $\Sigma = SS^T$ where S is a triangular matrix using the Cholesky Decomposition (a sort of square root for a matrix). Then we can transform the regression model as follows:
+
+$y = x\beta + \epsilon$
+$S^{-1}y = S^{-1}X\beta + S^{-1}\epsilon$
+$y' = X'\beta + \epsilon'$
+
+Then our sum of squared error is 
+
+#+DOWNLOADED: /tmp/screenshot.png @ 2020-02-15 22:43:34
+[[file:Problems with Error/screenshot_2020-02-15_22-43-34.png]]
+
+#+DOWNLOADED: /tmp/screenshot.png @ 2020-02-15 22:44:04
+[[file:Problems with Error/screenshot_2020-02-15_22-44-04.png]]
+
+The main problem of GLS in practice is that $\Sigma$ may not be known and we have to estimate it. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(globwarm, package = "faraway")
+gwarm <- globwarm %>% as_tibble()
+
+lmod <- lm(nhtemp ~ ., gwarm)
+
+lmod %>% tidy()
+#+END_SRC
+
+#+RESULTS:
+| term        | estimate | std.error | statistic |              p.value |
+|-------------+----------+-----------+-----------+----------------------|
+| (Intercept) |    -15.2 |       1.7 |      -8.8 | 4.34443093246517e-15 |
+| wusa        |     -0.1 |       0.0 |      -3.2 |                  0.0 |
+| jasper      |      0.0 |       0.1 |       0.2 |                  0.9 |
+| westgreen   |      0.1 |       0.0 |       2.0 |                  0.0 |
+| chesapeake  |      0.0 |       0.0 |       0.2 |                  0.8 |
+| tornetrask  |      0.1 |       0.0 |       1.4 |                  0.2 |
+| urals       |      0.1 |       0.1 |       1.2 |                  0.2 |
+| mongolia    |     -0.2 |       0.0 |      -3.5 |                  0.0 |
+| tasman      |      0.0 |       0.0 |       0.1 |                  0.9 |
+| year        |      0.0 |       0.0 |       8.7 | 9.59662211186724e-15 |
+
+Then we can check whether our errors are correlated. This data was collected over time, so its a very real possibility. We calculate this by computing the correlation between the vector of residuals with the first and then the last term omitted.
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+cor(residuals(lmod)[-1],
+    residuals(lmod)[-length(residuals(lmod))])
+#+END_SRC
+
+#+RESULTS:
+|   x |
+|-----|
+| 0.4 |
+
+The simplest way to model this is the autoregressive form:
+
+$\epsilon_{i+1} = \phi \epsilon_i + \delta_i$
+
+where $\delta_i \sim N(0, \tau^2)$
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(nlme)
+
+glmod <- gls(nhtemp ~ ., correlation = corAR1(form = ~year), na.omit(gwarm))
+
+glmod %>% summary()
+#+END_SRC
+
+There are no -significant- predictors and the standard errors are rather large. However, there is substantial collinearity between the predictors, so this should not be interpreted as "no predictor effect".
+
+We have a reasonably sized Phi estimate, which can expect as we would likely have carryover of temperature from one year to the next. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# check confidence intervals
+intervals(glmod, which = "var-cov")
+#+END_SRC
+
+We see from the interval on Phi that our coefficient is far from 0 and shows significant positive correlation. 
+
+For this example, we might investigate whether a more sophisticated model should apply to errors, perhaps an ARMA model. This can be implemented using the corARMA function. 
+
+Another situation where correlation between errors might be anticipated is where observations are grouped in some way. For example, consider an experiment to compare eight varieties of oats. The growing area was heterogeneous and was grouped into 5 blocks. Each variety was sown once within each block and the yield in grams per 16 foot row were recorded. 
+
+It is reasonable to expect that the errors are correlated (cor($\epsilon_i, \epsilon_j$)) is $\rho$ if i and j are in the same block and 0 otherwise. This is called the *compound symmetry* assumption and is modeled as follows:
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+glmod <- gls(yield ~ variety,
+             data = oatvar,
+             correlation = corCompSymm(form = ~1 | block))
+
+intervals(glmod)
+#+END_SRC
+
+Our value of $\rho$ shows that there is a correlation around 0.4 between the errors within the blocks. 
+
+** Weighted Least Squares
+
+Sometimes the errors are uncorrelated, but have unequal variance where the form of the inequality is known. 
