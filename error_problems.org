@@ -26,6 +26,7 @@ library(magrittr)
 #+RESULTS:
 | x         |
 |-----------|
+| magrittr  |
 | broom     |
 | faraway   |
 | forcats   |
@@ -391,3 +392,110 @@ Since the latter is so close to 1, this variance function takes a simple form.
 
 ** Testing for Lack of Fit 
 
+How can we tell whether a model fits the data? 
+
+If a model is correct, then our variance estimator should be an unbiased estimate of our actual variance. This suggests a testing procedure in which we compare our estimator to our actual variance. This is rather uncommon in practice, so we need some way to get an idea of what the actual variance is. 
+
+We could make a comparison to some model free estimate of $\sigma^2$. We can do this if we have repeated values of the response for one or more fixed values of x. These replicates do need to be truly independent. For example, the cases in the data may be people and the response might be blood pressure. If we had different people but the same predictor values, we could get an idea of the between-subject variability and then we could construct an estimate of $sigma^2$ that does not depend on a particular model.
+
+Let $y_{ij}$ be the ith observation in the group of true replicates j. The "pure error" or model-free estimate of $\sigma^2$ is given by 
+
+**insert math eqns here for sspe and df **
+
+There is a convenient way to compute the estimate. Fit a model that assigns one parameter to each group of observations with fixed x, then the variance estimator from this model will be the pure error. The model itself simply fits a mean to each group of estimates. Comparing this model to the regression model using the standard F-test gives us the lack-of-fit test. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(corrosion, package = "faraway")
+corrosion %<>% as_tibble()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+corrosion %>%
+    ggplot(aes(x = Fe, y = loss)) +
+    geom_point() +
+    labs(x = "Iron Content",
+         y = "Weight Loss")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Now we fit a straight line model 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod <- lm(loss ~ Fe, corrosion)
+
+lmod %>% glance()
+#+END_SRC
+
+#+RESULTS:
+| r.squared | adj.r.squared | sigma | statistic |              p.value |  df | logLik |  AIC |  BIC | deviance | df.residual |
+|-----------+---------------+-------+-----------+----------------------+-----+--------+------+------+----------+-------------|
+|       1.0 |           1.0 |   3.1 |     352.3 | 1.05535526706818e-09 | 2.0 |  -31.9 | 69.8 | 71.5 |    102.9 |        11.0 |
+
+We have an Rsq value of 97% and what looks like a good fit to the data. 
+
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+corrosion %>%
+    ggplot(aes(x = Fe, y = loss)) +
+    geom_point() +
+    geom_abline(slope = lmod$coefficients[[2]],
+                intercept = lmod$coefficients[[1]],
+                lty = 2) +
+    labs(x = "Iron Content",
+         y = "Weight Loss") 
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+We now fit a model that reserves a parameter for each group of data with the same value of x. This is accomplished by declaring the predictor to be a factor. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmoda <- lm(loss ~ factor(Fe), corrosion)
+
+lmoda %>% tidy()
+#+END_SRC
+
+#+RESULTS:
+| term           | estimate | std.error | statistic |              p.value |
+|----------------+----------+-----------+-----------+----------------------|
+| (Intercept)    |    128.6 |       0.8 |     158.9 |  4.1885655789357e-12 |
+| factor(Fe)0.48 |     -5.6 |       1.3 |      -4.4 |                  0.0 |
+| factor(Fe)0.71 |    -16.6 |       1.3 |     -13.0 | 1.28177759939805e-05 |
+| factor(Fe)0.95 |    -24.7 |       1.6 |     -15.2 | 5.02984555927067e-06 |
+| factor(Fe)1.19 |    -27.1 |       1.6 |     -16.7 | 2.91396797676478e-06 |
+| factor(Fe)1.44 |    -36.7 |       1.3 |     -28.7 | 1.18433281242117e-07 |
+| factor(Fe)1.96 |    -43.6 |       1.3 |     -34.1 | 4.23782401332901e-08 |
+
+The fitted values are the means in each group and we can plot these. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+corrosion %>%
+    ggplot(aes(x = Fe, y = loss)) +
+    geom_point() +
+    geom_point(data = augment(lmoda), aes(y = .fitted, x = corrosion$Fe),
+               shape = 5, color = "blue") +
+    labs(x = "Iron Content",
+         y = "Weight Loss")
+#+END_SRC
+
+We can now compare the two models in the usual way: 
+
+#+BEGIN_SRC R :results output
+anova(lmod, lmoda)
+#+END_SRC
+
+#+RESULTS:
+: Analysis of Variance Table
+: 
+: Model 1: loss ~ Fe
+: Model 2: loss ~ factor(Fe)
+:   Res.Df     RSS Df Sum of Sq      F   Pr(>F)   
+: 1     11 102.850                                
+: 2      6  11.782  5    91.069 9.2756 0.008623 **
+: ---
+: Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+The low p-value indicates that we must conclude there is a lack of fit. 
