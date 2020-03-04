@@ -14,10 +14,13 @@
         tbl)
 #+end_src
 
+#+RESULTS: round-tbl
+
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 library(tidyverse)
 library(faraway)
 library(broom)
+library(magrittr)
 #+END_SRC
 
 #+RESULTS:
@@ -146,4 +149,245 @@ Our value of $\rho$ shows that there is a correlation around 0.4 between the err
 
 ** Weighted Least Squares
 
-Sometimes the errors are uncorrelated, but have unequal variance where the form of the inequality is known. 
+Sometimes the errors are uncorrelated, but have unequal variance where the form of the inequality is known. Weighted least squares is a special case of Generalized least squares that can be used in this case. 
+
+Cases with low variability get a high weight, while those with high variability get a low weight. 
+
+Some examples: 
+
+#+DOWNLOADED: /tmp/screenshot.png @ 2020-03-03 20:14:46
+[[file:Problems with Error/screenshot_2020-03-03_20-14-46.png]]
+
+
+*** Example 
+
+Elections for the French presidency proceed in two rounds. In 1981 there were 10 candidates in the first round, and the top two candidates went on to the second round. 
+
+The losers in the first round can gain political favor by asking their supporters to vote for one of the two finalists. We wish to infer from the published vote totals how this transfer may have happened. 
+
+ #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(fpe, package = "faraway")
+fpe %<>% as_tibble(rownames = "department")
+fpe %>% head()
+ #+END_SRC
+
+A:K stand for the first round, and A2, B2 stand for the initial round victors (A and B were the first round victors). EI stands for the registered voters. The number of voters in the second round was higher than the first round, and the difference is denoted by N. 
+
+
+#+DOWNLOADED: /tmp/screenshot.png @ 2020-03-03 20:24:32
+[[file:Problems with Error/screenshot_2020-03-03_20-24-32.png]] 
+
+If we treat the above as a regression equation, there will be some error from department to department. The error will have a variance in proportion to the number of voters because it will be like a variance of a sum rather than the variance of a mean. 
+
+Since the weights should be inversely proportional to the variance, we should set the weights to 1 / EI. Notice this equation also has no intercept. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod <- lm(A2 ~ A + B + C + D + E + F + G + H + J + K + N - 1,
+           fpe,
+           weights = (1 / EI))
+
+lmod %>% tidy()
+#+END_SRC
+
+#+RESULTS:
+| term | estimate | std.error | statistic |              p.value |
+|------+----------+-----------+-----------+----------------------|
+| A    |      1.1 |       0.0 |      29.9 | 2.22469266213566e-13 |
+| B    |     -0.1 |       0.0 |      -3.1 |                  0.0 |
+| C    |      0.2 |       0.1 |       3.6 |                  0.0 |
+| D    |      0.9 |       0.0 |      42.0 | 2.89029872162462e-15 |
+| E    |      0.2 |       0.3 |       0.9 |                  0.4 |
+| F    |      0.8 |       0.1 |      13.1 | 7.28918857815741e-09 |
+| G    |      2.0 |       0.3 |       7.1 | 8.38088163028732e-06 |
+| H    |     -0.6 |       0.5 |      -1.1 |                  0.3 |
+| J    |      0.6 |       0.6 |       1.1 |                  0.3 |
+| K    |      1.2 |       0.5 |       2.4 |                  0.0 |
+| N    |      0.5 |       0.1 |       5.6 | 8.38901196792198e-05 |
+
+Note that the weights do matter - look at the difference when they are left out 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod2 <- lm(A2 ~ A + B + C + D + E + F + G + H + J + K + N - 1,
+           fpe)
+
+lmod2 %>% tidy()
+#+END_SRC
+
+#+RESULTS:
+| term | estimate | std.error | statistic |              p.value |
+|------+----------+-----------+-----------+----------------------|
+| A    |      1.1 |       0.0 |      30.5 | 1.76812290833848e-13 |
+| B    |     -0.1 |       0.0 |      -4.8 |                  0.0 |
+| C    |      0.3 |       0.1 |       4.5 |                  0.0 |
+| D    |      0.9 |       0.0 |      52.0 | 1.80130937575726e-16 |
+| E    |      0.7 |       0.3 |       2.3 |                  0.0 |
+| F    |      0.8 |       0.1 |      15.4 | 9.74122083137977e-10 |
+| G    |      2.2 |       0.2 |       9.8 | 2.31440504183119e-07 |
+| H    |     -0.9 |       0.5 |      -1.8 |                  0.1 |
+| J    |      0.1 |       0.6 |       0.2 |                  0.8 |
+| K    |      0.5 |       0.5 |       1.1 |                  0.3 |
+| N    |      0.6 |       0.1 |       6.1 | 3.66135131358541e-05 |
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+tibble("round" = c(letters[1:8], "j", "k", "n"),
+       "absolute difference" = abs(coef(lmod) - coef(lmod2)))
+#+END_SRC
+
+#+RESULTS:
+| round | absolute difference |
+|-------+---------------------|
+| a     |                 0.0 |
+| b     |                 0.0 |
+| c     |                 0.0 |
+| d     |                 0.0 |
+| e     |                 0.4 |
+| f     |                 0.0 |
+| g     |                 0.2 |
+| h     |                 0.3 |
+| j     |                 0.5 |
+| k     |                 0.7 |
+| n     |                 0.0 |
+
+This causes substantial changes for some of the lesser candidates. 
+
+There is one problem left, unrelated to weighting. Proportions are supposed to be between zero and one. We can impose an ad hoc fix by truncating the coefficients that violate this restriction either to 0 or 1 as appropriate. 
+
+The offset function means that no coefficient will be fit which is the same as saying the coefficient will be 1. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lm(A2 ~ offset(A + G + K) + C + D + E + F + N - 1,
+   fpe,
+   weights = (1 / EI)) %>%
+    tidy()
+#+END_SRC
+
+#+RESULTS:
+| term | estimate | std.error | statistic |              p.value |
+|------+----------+-----------+-----------+----------------------|
+| C    |      0.2 |       0.1 |       4.1 |                  0.0 |
+| D    |      1.0 |       0.0 |      41.6 | 4.04523592592162e-20 |
+| E    |      0.4 |       0.2 |       1.7 |                  0.1 |
+| F    |      0.7 |       0.1 |       9.2 | 2.08232910399788e-08 |
+| N    |      0.6 |       0.1 |       5.1 |  6.9406557537893e-05 |
+
+We see that: 
+
+- Almost all of the voters for D initially voted for A
+- Almost all of the voters for C initially voted for B
+- The rest are different splits 
+
+This analysis is somewhat crude and there are more sophisticated approaches. 
+
+The pcls() function in the mgcv package of Wood provides a solution to the constrained least squares problem (which in this case requires that $0 \leq \hat{\beta_i} \leq 1$). 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(mgcv)
+
+M <- list(w = (1 / fpe$EI),
+          X = model.matrix(lmod),
+          y = fpe$A2,
+          Ain = rbind(diag(11), - diag(11)),
+          C = matrix(0, 0, 0),
+          array(0, 0),
+          S = list(),
+          off = NULL,
+          p = rep(0.5, 11),
+          bin = c(rep(0, 11), rep(-1, 11)))
+
+A <- pcls(M)
+
+names(A) <- colnames(model.matrix(lmod))
+
+tibble("round" = c(letters[1:8], "j", "k", "n"),
+       "coefficients" = round(A, 3))
+#+END_SRC
+
+#+RESULTS:
+| round | coefficients |
+|-------+--------------|
+| a     |          1.0 |
+| b     |          0.0 |
+| c     |          0.2 |
+| d     |          1.0 |
+| e     |          0.4 |
+| f     |          0.7 |
+| g     |          1.0 |
+| h     |          0.4 |
+| j     |          0.0 |
+| k     |          1.0 |
+| n     |          0.6 |
+
+The results are quite similar for the candidates C, D, E, and N who have substantial numbers of votes, but the coefficients for the small party candidates vary much more. 
+
+In the examples where the form of the variance of epsilon is not completely known, we may model sigma using a smaller number of parameters. For example, 
+
+$sd(\epsilon_i) = \gamma_0 + x_1^{\gamma_1}$
+
+might seem reasonable for in a given situation. 
+
+Consider, for example, the cars data from chapter 7:
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+lmod3 <- lm(dist ~ speed, cars)
+
+plot(residuals(lmod3) ~ speed, cars)
+
+cars %>% 
+    ggplot(aes(x = speed, y = residuals(lmod3))) +
+    geom_point()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+The plot reveals that the variation in the residuals increases with speed. 
+
+One solution to this problem is to set the weights according to the above form and simultaneously estimate beta and gamma using maximum likelihood methods. 
+
+#+BEGIN_SRC R :results output
+wlmod <- gls(dist ~ speed,
+             data = cars, 
+             weights = varConstPower(1, form = ~ speed))
+
+wlmod %>% summary()
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+
+Generalized least squares fit by REML
+  Model: dist ~ speed 
+  Data: cars 
+       AIC      BIC    logLik
+  412.8352 422.1912 -201.4176
+
+Variance function:
+ Structure: Constant plus power of variance covariate
+ Formula: ~speed 
+ Parameter estimates:
+   const    power 
+3.160444 1.022368 
+
+Coefficients:
+                 Value Std.Error   t-value p-value
+(Intercept) -11.085378  4.052378 -2.735524  0.0087
+speed         3.484162  0.320237 10.879947  0.0000
+
+ Correlation: 
+      (Intr)
+speed -0.9  
+
+Standardized residuals:
+       Min         Q1        Med         Q3        Max 
+-1.4520579 -0.6898209 -0.1308277  0.6375029  3.0757014 
+
+Residual standard error: 0.7636833 
+Degrees of freedom: 50 total; 48 residual
+#+end_example
+
+We see that $\gamma_0 = 3.16$ and $\hat{\gamma_1} = 1.022$. 
+
+Since the latter is so close to 1, this variance function takes a simple form.  
+
+** Testing for Lack of Fit 
+
