@@ -23,29 +23,6 @@ library(broom)
 library(magrittr)
 #+END_SRC
 
-#+RESULTS:
-| x         |
-|-----------|
-| magrittr  |
-| broom     |
-| faraway   |
-| forcats   |
-| stringr   |
-| dplyr     |
-| purrr     |
-| readr     |
-| tidyr     |
-| tibble    |
-| ggplot2   |
-| tidyverse |
-| stats     |
-| graphics  |
-| grDevices |
-| utils     |
-| datasets  |
-| methods   |
-| base      |
-
 We have assumed that the error $\epsilon$ is iid, and we have also assumed that the errors are normally distributed in order to carry out normal statistical inference. These assumptions can often be violated and we must consider alternatives.
 
 - When the errors are dependent, we can use *generalized least squares*
@@ -444,7 +421,7 @@ corrosion %>%
                 intercept = lmod$coefficients[[1]],
                 lty = 2) +
     labs(x = "Iron Content",
-         y = "Weight Loss") 
+         y = "Weight Loss")
 #+END_SRC
 
 #+RESULTS:
@@ -481,6 +458,9 @@ corrosion %>%
          y = "Weight Loss")
 #+END_SRC
 
+#+RESULTS:
+[[file:plot.svg]]
+
 We can now compare the two models in the usual way: 
 
 #+BEGIN_SRC R :results output
@@ -498,4 +478,5 @@ anova(lmod, lmoda)
 : ---
 : Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
-The low p-value indicates that we must conclude there is a lack of fit. 
+The low p-value indicates that we must conclude there is a lack of fit. We might investigate models other than a straight line, but no obvious alternatives are suggested by the plot. 
+
