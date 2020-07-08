@@ -480,3 +480,82 @@ anova(lmod, lmoda)
 
 The low p-value indicates that we must conclude there is a lack of fit. We might investigate models other than a straight line, but no obvious alternatives are suggested by the plot. 
 
+** Robust Regression 
+
+When the errors are normally distributed, least squares regression is the best. When the errors follow some other distribution, other methods of model fitting may be considered. Short-tailed distributions are not as problematic as long-tailed distributions. 
+
+Robust regression works better if you are dealing with more than one or two outliers. 
+
+*** M-Estimation 
+
+M-estimates modify the least squares idea to choose $\beta$ to minimize $\sum_{i = 1}^n \rho (y_i - x_i^T \beta)$
+
+Some possible choices for $\rho$ are:
+- $\rho(x) = x^2$ is just least squares
+- $\rho(x) = |x|$ is called least absolute deviation regression or $L_1$ regression
+- $\rho(x) = \frac{x^2}{2} if |x| \leq c; \frac{c|x| - c^2}{2} \mathrm{ow}$ is called Huber's Method and is a compromise between least squares and LAD regression. $c$ should be a robust estimate of $\rho$. A value proportional to the median of $|\hat{\epsilon}|$ is suitable. 
+
+We demostrate the methods on the Galapagos data
+
+Using least squares first: 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(gala, package = "faraway")
+gala %<>% as_tibble(rownames = "location")
+
+gala_form <- as.formula(Species ~ Area + Elevation + Nearest + Scruz + Adjacent)
+
+# fit least squares model
+(lsmod <- lm(gala_form, gala))
+
+lsmod %>% tidy()
+#+END_SRC
+
+Least squares works well when there are normal errors, but performs poorly for long-tailed errors. The Huber method is the default choice of the rlm() function
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+require(MASS)
+
+(rlmod <- rlm(gala_form, gala))
+rlmod %>% tidy()
+#+END_SRC
+
+The $R^2$ statistic is not given becuase it doesn't make sense in the context of a robust regression. p-values are not given although we use the asymptotic normality of the estimator to make approximate inferences using the t-values. We see that the same two predictors, elevation and adjacent are significant. The numerical values of the predictors have changed somewhat and the standard errors are generally smaller for these two predictors. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+get_weight_diff <- function(mod1, mod2) {
+    ferr <- function(errs) {
+        paste(errs, collapse = "\n")
+    }
+    m1_err <- tidy(mod1)$std.error
+    m2_err <- tidy(mod2)$std.error
+    diff <- (m1_err - m2_err)
+    total_diff <- sum(diff)
+    cat("Model 1 Error:\n", ferr(m1_err), "\n",
+        "Model 2 Error:\n", ferr(m2_err), "\n",
+        "Difference\n", ferr(diff), "\n",
+        "Overall Difference", total_diff)
+}
+
+get_weight_diff(lsmod, rlmod)
+#+END_SRC
+
+It is worth looking at the weights assigned by the final fit. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# extract the weights assigned by the final fit
+tibble("weights" = rlmod$w,
+       "location" = gala$location) %>%
+    arrange(weights)
+#+END_SRC
+
+We can see that a few islands are substantially discounted in the calculation of the robust fit. 
+
+We can also do Least Absolute Deviation ($L_1$) regression with the quantreg package
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(quantreg)
+
+l1mod <- rq(gala_form, gala)
+l1mod %>% tidy()
+#+END_SRC
