@@ -726,18 +726,19 @@ We wish to use weights to account for the non-constant variance. Here we split t
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 # Faraway
-i <- order(pipeline$Field)
-npipe <- pipeline[i, ]
-ff <- gl(12, 9)[-108]
-meanfield <- unlist(lapply(split(npipe$Field, ff), mean))
-varlab <- unlist(lapply(split(npipe$Lab, ff), var))
+(i <- order(pipeline$Field))
+(npipe <- pipeline[i, ])
+(ff <- gl(12, 9)[-108])
+(meanfield <- unlist(lapply(split(npipe$Field, ff), mean)))
+(varlab <- unlist(lapply(split(npipe$Lab, ff), var)))
 
 # remake
-# split into 12 groups of size 9
 pipeline %>%
-    group_by(Field) %>%
-    group_split() %>%
-    map(., ~ .x %>% extract2(Field) %>% summarize("meanfield" = mean(.),
-                                              "varlab" = var(.)))
-
+    arrange(Field) %>%
+    mutate(sample_group = map(1:12, ~ rep(.x, 9)) %>% flatten_dbl() %>% .[-length(.)]) %>%
+    group_by(sample_group) %>%
+    group_split(~ sample_group) %>%
+    map(., ~ .x %>% summarize("meanfield" = mean(Field),
+                            "varlab" = var(Lab))) %>%
+    bind_rows()
 #+END_SRC
