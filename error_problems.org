@@ -587,6 +587,10 @@ ltsmod %>% coef() %>% as.double() %>% set_names(names(coef(ltsmod)))
 
 We now use a general method of inference that is especially useful when such theory is lacking -- the bootstrap. 
 
+1. Generate $\epsilon^*$ by sampling with replacement from $\hat{\epsilon_1}, ..., \hat{\epsilon_n}$
+2. Form $y^* = X \hat{\beta} + \epsilon^*$
+3. Compute $\hat{\beta}^*$ from $(X, y^*)$ 
+
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 # create bootstrap matrix
 bcoef <- matrix(0, 1000, 6)
@@ -637,3 +641,103 @@ ggplot(bcoef, aes(x = Adjacent)) +
 #+RESULTS:
 [[file:plot.svg]]
 
+
+The conclusion is that the Area variable is significant, which is in contract to the conclusion from the least squares fit. Which estimates are best? An examination of the Cook distances for the least squares fit shows the island of Isabela to be very influential. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# exclude Isabela
+(limod <- lm(gala_form, filter(gala, !(location == "Isabela"))))
+summary(limod)
+#+END_SRC
+
+This fit is much closer to the Least Trimmed Squares fit in that Area and Adjacent are very significant predictors. 
+
+** Summary 
+
+1. Robust estimators provide protection against long-tailed errors, but they cannot overcome problems with the choice of model and its variance structure
+2. Robust estimates supply $\hat{\beta}$ and possibly standard errors without the associated inferential methods. Software and methodology for this inference require extra work. The bootstrap is a general purpose inferential method which is useful in these situations.
+3. Robust methods can be used in addition to least squares as a confirmatory method. You have cause to worry if the two estimates are far apart. The source of the difference should be investigated
+4. Robust estimates are useful when the data need to be fit automatically without the intervention of a skilled analyst. 
+
+** Exercises 
+
+*** 1. 
+**** Pre. Load and look at the data 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(pipeline, package = "faraway")
+pipeline %<>% as_tibble()
+
+# skim
+pipeline %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+# plawt
+pipeline %>%
+    GGally::ggpairs()
+#+END_SRC
+
+**** a. Fit a regression model Lab ~ Field. Check for nonconstant variance 
+
+ #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod <- lm(Lab ~ Field, pipeline))
+ #+END_SRC
+
+ #+BEGIN_SRC R :file plot.svg :results graphics file
+# to check for nonconstant variance, we look at our fitted vs. residuals plot
+diag_plot <- function(data, x, y) {
+    data %>%
+        ggplot(aes(x = {{x}}, y = {{y}})) +
+        geom_point() +
+        geom_hline(yintercept = 0, lty = 2, alpha = 0.5)
+}
+
+lmod %>%
+    augment() %>%
+    diag_plot(.fitted, .resid)
+ #+END_SRC
+
+ #+RESULTS:
+ [[file:plot.svg]]
+
+ This looks like mild to strong nonconstant variance. We could also look at the fitted values against the sqrt of the absolute value of the residuals 
+
+ #+BEGIN_SRC R :file plot.svg :results graphics file
+lmod %>%
+    augment() %>%
+    diag_plot(.fitted, sqrt(abs(.resid)))
+ #+END_SRC
+
+ #+RESULTS:
+ [[file:plot.svg]]
+
+ Things still look very off. Let's try a numerical test for nonconstant variance just to be sure
+
+ #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lm(sqrt(abs(.resid)) ~ .fitted, augment(lmod)) %>% summary()
+ #+END_SRC
+
+ We are looking for a linear trend in the variation. We see a mild trend, with a .fitted coefficient of .02. 
+
+**** b.  
+
+We wish to use weights to account for the non-constant variance. Here we split the range of Field into 12 groups of size 9. Within each group, we conpute the variance of Lab as varlab and the mean of Field as meanfield.  
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# Faraway
+i <- order(pipeline$Field)
+npipe <- pipeline[i, ]
+ff <- gl(12, 9)[-108]
+meanfield <- unlist(lapply(split(npipe$Field, ff), mean))
+varlab <- unlist(lapply(split(npipe$Lab, ff), var))
+
+# remake
+# split into 12 groups of size 9
+pipeline %>%
+    group_by(Field) %>%
+    group_split() %>%
+    map(., ~ .x %>% extract2(Field) %>% summarize("meanfield" = mean(.),
+                                              "varlab" = var(.)))
+
+#+END_SRC
