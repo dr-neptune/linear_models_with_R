@@ -557,5 +557,83 @@ We can also do Least Absolute Deviation ($L_1$) regression with the quantreg pac
 library(quantreg)
 
 l1mod <- rq(gala_form, gala)
+
 l1mod %>% tidy()
 #+END_SRC
+
+*** Least Trimmed Squares 
+
+The Huber and $L_1$ methods will still fail if the large errors are sufficiently numerous and extreme in value. Least Trimmed Squares is an example of a resistant regression method. Resistent methods are good for dealing with data where we expect a certain number of bad observations that we want to have no weight in the analysis. 
+
+LTS minimizes the sum of squares for the $q$ smallest residuals $\sum_{i = 1}^q \hat{\epsilon}_{(i)}^2$, where $q$ is some number less than $n$ and $(i)$ indicates sorting. This method has a high breakdown point because it can tolerate a large number of outliers depending on how $q$ is chosen. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+set.seed(123)
+
+(ltsmod <- ltsreg(gala_form, gala))
+
+ltsmod %>% coef()
+#+END_SRC
+
+The default choice of $q$ is $\lfloor \frac{n}{2} \rfloor + \lfloor \frac{p + 1}{2} \rfloor$. A genetic algorithm is used by default to compute the coefficients and is non-deterministic. 
+
+An exhaustive search method can be used: 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(ltsmod <- ltsreg(gala_form, gala, nsamp = "exact"))
+
+ltsmod %>% coef() %>% as.double() %>% set_names(names(coef(ltsmod)))
+#+END_SRC
+
+We now use a general method of inference that is especially useful when such theory is lacking -- the bootstrap. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# create bootstrap matrix
+bcoef <- matrix(0, 1000, 6)
+
+# generate bootstrap samples
+for (i in 1:1000) {
+    newy <- predict(ltsmod) + residuals(ltsmod)[sample(30, rep = T)]
+    brg <- ltsreg(newy ~ Area + Elevation + Nearest + Scruz + Adjacent, gala, nsamp = "best")
+    bcoef[i, ] <- brg$coef
+}
+
+# make a 95% CI for this parameter by taking the empirical quantiles
+colnames(bcoef) <- names(coef(ltsmod))
+apply(bcoef, 2, function(x) quantile(x, c(0.025, 0.975)))
+
+bcoef <- map(1:1000, ~ {
+    newy <- predict(ltsmod) + residuals(ltsmod)[sample(30, rep = T)]
+    brg <- ltsreg(newy ~ Area + Elevation + Nearest + Scruz + Adjacent, gala, nsamp = "best")
+    as.double(brg$coef) %>% set_names(names(coef(ltsmod)))}) %>%
+    bind_rows()
+
+bcoef %>%
+    map_df(., ~ quantile(.x, c(0.025, 0.975))) %>%
+    add_column("names" = names(coef(ltsmod)))
+
+bcoef %<>% t() %>% as_tibble() %>% set_names(names(coef(ltsmod))) %>% slice(1:2)
+#+END_SRC
+
+Zero lies outside the interval for Area, Nearest, and Adjacent so we are confident there is an effect for these predictors, although Nearest is marginal. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+ggplot(bcoef, aes(x = Area)) +
+    geom_density()+
+    xlim(1.45, 1.65) +
+    geom_vline(xintercept = c(1.49, 1.62), lty = 2)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+ggplot(bcoef, aes(x = Adjacent)) +
+    geom_density()+
+    xlim(-0.25, -0.13) +
+    geom_vline(xintercept = c(-0.23375, -0.15138), lty = 2)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
