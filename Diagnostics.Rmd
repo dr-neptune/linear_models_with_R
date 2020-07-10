@@ -294,7 +294,7 @@ It is difficult to check for correlated errors in general because there are too 
 - Spatial data may have correlation in the errors of nearby measurements 
 - Data collected in blocks may show correlated errors within those blocks
 
-We can illustrate the methods with a time series analysis, but we will use methods more specific to the regression diagnostics problem. 
+We can illustrate the methods with a time series analysis, but we will use methods more specific to the regression diagnostics problem.
 
 ```{r}
 data(globwarm, package = "faraway")
@@ -399,7 +399,8 @@ $DW = \frac{\sum_{i=2}^n (\hat{\epsilon_i} - \hat{\epsilon_{j-1}})^2}{\sum_{i = 
 
 It essentially looks at the successive residuals, squares them, and normalizes their sum by the sum of squared residuals.
 
-The null hypothesis is that the errors are uncorrelated. The null distribution based on the assumption of uncorrelated errors follows a linear combination of Chi Squared distributions. 
+The null hypothesis is that the errors are uncorrelated. The null distribution based on the assumption of uncorrelated errors follows a linear combination of Chi Squared distributions.
+
 
 ```{r}
 # run Durbin-Watson statistic

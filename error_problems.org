@@ -823,3 +823,139 @@ lmod %>% tidy()
 | military    |     -0.0 |       0.0 |      -1.9 |                  0.1 |
 
 **** a. Make two graphical checks for correlated errors. What do you conclude? 
+
+The most sensible one is the time index against residuals. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+lmod %>%
+    augment() %>%
+    diag_plot(divusa$year, .resid)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+In this plot, we clearly see that the residuals are all over the place and seem to follow a pattern 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+p1 <- lmod %>%
+    augment() %>%
+    diag_plot(divusa$year, .resid) +
+    geom_line(alpha = 0.3) +
+    xlab("Year") + ylab("Residuals") +
+    ggtitle("DivUSA Time ~ Residuals")
+
+p2 <- diag_plot(divusa, year, rnorm(length(divusa$year))) +
+    ylab("Normally Distributed Error") +
+    xlab("Year") +
+    ggtitle("What we would see without correlated error")
+
+library(patchwork)
+p1 / p2
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+The next visualization is the lead vs lag residuals
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+make_successive_res_plot <- function(data) {
+    # get data length
+    n <- data %>% nrow()
+
+    # add lead lag
+    data %<>%
+    mutate(lead = .resid[2:nrow(.)] %>% append(0),
+           lag = .resid[1:(nrow(.) - 1)] %>% append(0))
+
+    # fit slope
+    lm_in <- lm(lead ~ lag, data)
+
+    data %>%
+        ggplot(aes(x = lead, y = lag)) +
+        geom_point() +
+        geom_hline(yintercept = 0, lty = 2, alpha = 0.3) +
+        geom_vline(xintercept = 0, lty = 2, alpha = 0.3) +
+        geom_abline(slope = lm_in$coefficients[[2]],
+                    intercept = lm_in$coefficients[[1]],
+                    color = "blue",
+                    alpha = 0.3)
+}
+
+lmod %>%
+    augment() %>%
+    make_successive_res_plot()
+#+END_SRC
+
+Finally we can also do a Durbin Watson test 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmtest::dwtest(divorce ~ unemployed + femlab + marriage + birth + military, data = divusa) %>%
+    tidy()
+#+END_SRC
+
+#+RESULTS:
+| statistic |              p.value | method             | alternative                            |
+|-----------+----------------------+--------------------+----------------------------------------|
+|       0.3 | 4.15101640488328e-26 | Durbin-Watson test | true autocorrelation is greater than 0 |
+
+In the Durbin Watson test our alternative hypothesis is that true autocorrelation is greater than 0. Given our very very low p-value, we can be certain that there is autocorrelation. 
+
+
+**** b. Allow for serial correlation with an AR(1) model for the errors. 
+
+ #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(glmod <- gls(divorce ~ unemployed + femlab + marriage + birth + military,
+             correlation = corAR1(form = ~ year),
+             method = "ML",
+             divusa))
+
+# femlab marriage birth and unemployed are significant
+glmod %>% summary()
+
+# femlab marriage and birth are significant. unemployed is on the fence
+lmod %>% summary()
+ #+END_SRC
+
+ What is the estimated correlation and is it significant?
+
+ The estimated correlation coefficient is 0.97. We can roughly interpret this as the output getting a larger contribution from the previous term relative to the noise. 
+
+ Does the GLS model change which variables are found to be significant? 
+
+ Yes. Unemployment was on the fence in our initial least squares model. In our generalized least squares model, our p value dropped to ~ 0.05 -> 0.02 
+
+**** c. Speculate as to why there might be correlation in the errors 
+
+ In this case, I think the most interesting plots are the following: 
+
+ #+BEGIN_SRC R :file plot.svg :results graphics file
+p2 <- ggplot(divusa, aes(x = year, y = femlab)) +
+    geom_point() +
+    geom_line(alpha = 0.2) + 
+    xlab("Year") + ylab("Female Participation in Labor") +
+    ggtitle("Time ~ Femlab")
+
+p3 <- ggplot(divusa, aes(x = year, y = marriage)) +
+    geom_point() +
+    geom_line(alpha = 0.2) + 
+    xlab("Year") + ylab("Marriages / 1k Unmarried Women") +
+    ggtitle("Time ~ Marriage")
+
+p4 <- ggplot(divusa, aes(x = year, y = divorce)) +
+    geom_point() +
+    geom_line(alpha = 0.2) + 
+    xlab("Year") + ylab("Divorce Rate") +
+    ggtitle("Time ~ Divorce Rate")
+
+p1 / p4 / p2 / p3 
+ #+END_SRC
+
+ #+RESULTS:
+ [[file:plot.svg]]
+
+ The late 40s were a post-war boom time. Around this same period of time, we see a large bump in the female participation in the labor force. This is likely as a result of less men after WWII. I'm not certain about the drop in divorce in the late 60s. Perhaps financial independence in the 80s for women lead to higher divorce rates as well
+
+*** 3. For the salmonella dataset, fit a linear model with colonies as the response and log(dose + 1) as the predictor. Check for lack of fit. 
+
