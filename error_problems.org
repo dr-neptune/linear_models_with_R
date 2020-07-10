@@ -438,13 +438,13 @@ lmoda %>% tidy()
 #+RESULTS:
 | term           | estimate | std.error | statistic |              p.value |
 |----------------+----------+-----------+-----------+----------------------|
-| (Intercept)    |    128.6 |       0.8 |     158.9 |  4.1885655789357e-12 |
+| (Intercept)    |    128.6 |       0.8 |     158.9 | 4.18856557893574e-12 |
 | factor(Fe)0.48 |     -5.6 |       1.3 |      -4.4 |                  0.0 |
-| factor(Fe)0.71 |    -16.6 |       1.3 |     -13.0 | 1.28177759939805e-05 |
-| factor(Fe)0.95 |    -24.7 |       1.6 |     -15.2 | 5.02984555927067e-06 |
-| factor(Fe)1.19 |    -27.1 |       1.6 |     -16.7 | 2.91396797676478e-06 |
-| factor(Fe)1.44 |    -36.7 |       1.3 |     -28.7 | 1.18433281242117e-07 |
-| factor(Fe)1.96 |    -43.6 |       1.3 |     -34.1 | 4.23782401332901e-08 |
+| factor(Fe)0.71 |    -16.6 |       1.3 |     -13.0 | 1.28177759939807e-05 |
+| factor(Fe)0.95 |    -24.7 |       1.6 |     -15.2 | 5.02984555927072e-06 |
+| factor(Fe)1.19 |    -27.1 |       1.6 |     -16.7 | 2.91396797676481e-06 |
+| factor(Fe)1.44 |    -36.7 |       1.3 |     -28.7 | 1.18433281242119e-07 |
+| factor(Fe)1.96 |    -43.6 |       1.3 |     -34.1 | 4.23782401332906e-08 |
 
 The fitted values are the means in each group and we can plot these. 
 
@@ -678,6 +678,9 @@ pipeline %>%
     GGally::ggpairs()
 #+END_SRC
 
+#+RESULTS:
+[[file:plot.svg]]
+
 **** a. Fit a regression model Lab ~ Field. Check for nonconstant variance 
 
  #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
@@ -740,5 +743,83 @@ pipeline %>%
     group_split(~ sample_group) %>%
     map(., ~ .x %>% summarize("meanfield" = mean(Field),
                             "varlab" = var(Lab))) %>%
-    bind_rows()
+    bind_rows() -> pline
 #+END_SRC
+
+Suppose we guess that the variance in the response is linked to the predictor in the following way: var$(Lab) = a_0 \mathrm{Field}^{a_1}$. Regress `log(varlab)` on `lab(meanfield)` to estimate $a_0$ and $a_1$. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(glmod <- lm(log(varlab) ~ log(meanfield), data = pline))
+#+END_SRC
+
+Since our coefficient is ~ 1, we can say that $\log{varlab} \propto \log{meanfield}$, suggesting a weighting of $w_i = x_i^{-1}$
+
+To double check, we can view a plot of $|\hat{\epsilon_i}|$ against $x_i$
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+glmod %>%
+    augment() %>%
+    diag_plot(abs(.resid), log.meanfield.) +
+    geom_smooth(method = "lm", se = FALSE, lty = 2, alpha = 0.3)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+From this plot we can see the positive relationship.
+
+Now we can make the weighted model: 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(glmod <- lm(log(varlab) ~ log(meanfield), data = pline, weights = (1 / log(meanfield))))
+
+# slightly better 
+glmod %>%
+    summary()
+#+END_SRC
+
+**** c. An alternative to weighting is transformation. Find transformations on lab and/or field so that in the transformed scale the relationship is approximately linear with constant variance. You may restrict your choice of transformation to sqrt, log, and inverse 
+
+ #+BEGIN_SRC R :file plot.svg :results graphics file
+pipeline %>% 
+    diag_plot(sqrt(log(Field)), sqrt(log(Lab))) +
+    geom_abline(slope = 1,
+                intercept = 0)
+ #+END_SRC
+
+ #+RESULTS:
+ [[file:plot.svg]]
+
+*** 2.
+**** Pre
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(divusa, package = "faraway")
+divusa %<>% as_tibble()
+
+divusa %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+divusa %>%
+    GGally::ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod <- lm(divorce ~ unemployed + femlab + marriage + birth + military, data = divusa))
+lmod %>% tidy()
+#+END_SRC
+
+#+RESULTS:
+| term        | estimate | std.error | statistic |              p.value |
+|-------------+----------+-----------+-----------+----------------------|
+| (Intercept) |      2.5 |       3.4 |       0.7 |                  0.5 |
+| unemployed  |     -0.1 |       0.1 |      -2.0 |                  0.1 |
+| femlab      |      0.4 |       0.0 |      12.5 | 1.10645019087862e-19 |
+| marriage    |      0.1 |       0.0 |       4.9 | 6.77180909547692e-06 |
+| birth       |     -0.1 |       0.0 |      -8.3 | 4.02709555606474e-12 |
+| military    |     -0.0 |       0.0 |      -1.9 |                  0.1 |
+
+**** a. Make two graphical checks for correlated errors. What do you conclude? 
