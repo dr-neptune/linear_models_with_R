@@ -957,5 +957,197 @@ p1 / p4 / p2 / p3
 
  The late 40s were a post-war boom time. Around this same period of time, we see a large bump in the female participation in the labor force. This is likely as a result of less men after WWII. I'm not certain about the drop in divorce in the late 60s. Perhaps financial independence in the 80s for women lead to higher divorce rates as well
 
-*** 3. For the salmonella dataset, fit a linear model with colonies as the response and log(dose + 1) as the predictor. Check for lack of fit. 
+*** 3.
+
+For the salmonella dataset, fit a linear model with colonies as the response and log(dose + 1) as the predictor. Check for lack of fit.
+
+**** Pre 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(salmonella, package = "faraway")
+salmonella %<>% as_tibble()
+
+salmonella %>%
+    skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+salmonella %>%
+    GGally::ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod <- lm(colonies ~ log(dose + 1), salmonella))
+lmod %>% summary()
+#+END_SRC
+
+#+RESULTS:
+| term          | estimate | std.error | statistic | p.value |
+|---------------+----------+-----------+-----------+---------|
+| (Intercept)   |     19.8 |       5.1 |       3.9 |     0.0 |
+| log(dose + 1) |      2.4 |       1.1 |       2.1 |     0.0 |
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+ggplot(salmonella, aes(x = log(dose + 1), y = colonies)) +
+    geom_point() +
+    geom_abline(intercept = 19.823,
+                slope = 2.396,
+                lty = 2)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+This clearly doesn't fit well. Lets try again by grouping the dose into a factor 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod2 <- lm(colonies ~ factor(log(dose + 1)), salmonella))
+
+# we went from an adj rsq of .1713 -> adj rsq of .359 
+lmod2 %>%
+    summary()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+salmonella %>%
+    ggplot(aes(x = log(dose + 1), y = colonies)) +
+    geom_point() +
+    geom_point(data = augment(lmod2), aes(y = .fitted, x = log(salmonella$dose + 1)),
+               shape = 5, color = "mediumpurple") +
+    geom_smooth(data = augment(lmod2), aes(y = .fitted, x = log(salmonella$dose + 1)),
+                color = "mediumpurple") +
+    labs(x = expression("\\log(dose + 1)"),
+         y = "Colonies")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+
+Can we do better? 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod3 <- lm(sqrt(colonies) ~ factor(log(dose + 1)), salmonella))
+
+# from .35 -> .38 
+lmod3 %>% summary()
+
+# for laffs
+(lmod4 <- lm(sqrt(sqrt(sqrt(sqrt(colonies)))) ~ factor(log(dose + 1)), salmonella))
+# .3812 -> .3882 
+lmod4 %>% summary()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+salmonella %>%
+    ggplot(aes(x = log(dose + 1), y = sqrt(colonies))) +
+    geom_point() +
+    geom_point(data = augment(lmod3), aes(y = .fitted, x = log(salmonella$dose + 1)),
+               shape = 5, color = "mediumpurple") +
+    geom_smooth(data = augment(lmod3), aes(y = .fitted, x = log(salmonella$dose + 1)),
+                color = "mediumpurple") +
+    labs(x = "log(dose + 1)",
+         y = "Colonies")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+
+
+
+*** 4. 
+
+For the cars dataset, fit a linear model with distance as the response and speed as the predictor. Check for lack of fit 
+
+**** Pre
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(cars, package = "faraway")
+cars %<>% as_tibble()
+
+cars %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+cars %>%
+    GGally::ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# fit me a model 
+lmod <- lm(dist ~ speed, cars)
+lmod %>% summary()
+#+END_SRC
+
+Let's try to make it better than adj R^2 of .6438
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod2 <- lm(sqrt(dist) ~ speed, cars)
+lmod2 %>% summary()
+#+END_SRC
+
+We got up to .7034
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+p1 <- ggplot(cars, aes(x = speed, y = dist)) +
+    geom_point() +
+    geom_abline(intercept = lmod$coefficients[[1]],
+                slope = lmod$coefficients[[2]]) +
+    ggtitle("Speed ~ Dist | No Transformation")
+
+p2 <- ggplot(cars, aes(x = speed, y = sqrt(dist))) +
+    geom_point() +
+    geom_abline(intercept = lmod2$coefficients[[1]],
+                slope = lmod2$coefficients[[2]]) +
+    ylim(0, 120) + 
+    ggtitle("sqrt(dist)")
+
+p3 <- ggplot(cars, aes(x = speed, y = sqrt(dist))) +
+    geom_point() +
+    geom_abline(intercept = lmod2$coefficients[[1]],
+                slope = lmod2$coefficients[[2]]) +
+    ggtitle("sqrt(dist) zoom-in")
+
+p1 / p2 / p3
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+library(ggforce)
+
+ggplot(cars, aes(x = speed, y = dist)) +
+    geom_point() +
+    geom_autodensity(alpha = 0.3) +
+    geom_smooth() +
+    facet_matrix(vars(everything()), layer.diag = 2)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+*** 5. 
+
+Using the stackloss data, fit a model with stack.loss as the response and the other three vars as predictors using the following methods: 
+
+- Least Squares 
+- Least Absolute Deviations ($L_1$)
+- Huber method
+- Least Trimmed Squares
+
+Compare the results. 
+
+Now use diagnostic methods to detect any outliers or influential points. 
+
+Remove these points and then use least squares. Compare the results 
 
