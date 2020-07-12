@@ -62,3 +62,79 @@ p2
 
 #+RESULTS:
 [[file:plot.svg]]
+
+
+The confidence interval for $\lambda$ runs from about 0.6 to 1.4. There is no good reason to transform. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# consider the Galapagos Islands dataset
+data(gala, package = "faraway")
+gala %<>% as_tibble(rownames = "Location")
+
+(lmod <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent, gala))
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+(bc <- boxcox(lmod, lambda = seq(-0.25, 0.75, by = 0.05), plotit = TRUE))
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+In the boxcox transformation, a cube root or square root transformation might be a good choice. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod %>% summary()
+
+bc_out <- tibble("lambda" = bc$x,
+                 "log_likelihood" = bc$y)
+
+bc_out %>%
+    arrange(desc(log_likelihood)) %>%
+    pluck(1, 1) -> lambda_out
+
+(lmod2 <- lm(((Species^lambda_out - 1) / lambda_out) ~ Area + Elevation + Nearest + Scruz + Adjacent, gala))
+lmod2 %>% summary()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+p1 <- qq_plot(gala, Species, "Species")
+p2 <- qq_plot(gala, ((Species^lambda_out - 1) / lambda_out), "Species Transformed")
+p1 + p2
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Some general considerations regarding the Box-Cox Transformation: 
+
+1. The Box-Cox method gets upset by outliers. If $\hat{\lambda} = 5$, then this is probably the reason -- there can be little justification for such an extreme transformation. 
+2. If some $y_i < 0$ is small, we can add a constant to all y. This is inelegant, but usable.
+3. If $\frac{\max_i y_i}{\min_i y_i}$ is small, then the Box-Cox will not have much real effect because power transforms are well approximated by linear transformations over short intervals far from the origin.
+4. There is some doubt whether the estimation of $\lambda$ counts as an extra parameter to be considered in the degrees of freedom. 
+
+The Box-Cox method is not the only way of transforming the predictors. Another family of transformations is given by $g_{\alpha}(y) = \log(y + \alpha)$. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod <- lm(burntime ~ nitrogen + chlorine + potassium, leafburn)
+lmod %>% summary()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+(lt_out <- logtrans(lmod, plotit = TRUE, alpha = seq(-min(leafburn$burntime) + 0.001, 0, by = 0.01)))
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+The recommended $\hat{\alpha}$ value is 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(tibble("lambda" = lt_out$x,
+        "log_likelihood" = lt_out$y) %>%
+ arrange(desc(log_likelihood)) %>%
+ pluck(1, 1))
+#+END_SRC
+
+** Transforming the Predictors 
+
