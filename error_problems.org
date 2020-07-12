@@ -661,7 +661,7 @@ This fit is much closer to the Least Trimmed Squares fit in that Area and Adjace
 
 ** Exercises 
 
-*** 1. 
+*** 1.
 **** Pre. Load and look at the data 
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
@@ -1058,8 +1058,7 @@ salmonella %>%
 [[file:plot.svg]]
 
 
-
-*** 4. 
+*** 4.
 
 For the cars dataset, fit a linear model with distance as the response and speed as the predictor. Check for lack of fit 
 
@@ -1135,7 +1134,7 @@ ggplot(cars, aes(x = speed, y = dist)) +
 #+RESULTS:
 [[file:plot.svg]]
 
-*** 5. 
+*** 5.
 
 Using the stackloss data
 
@@ -1186,6 +1185,22 @@ hmod %>% tidy()
 # least trimmed squares
 ltsmod <- ltsreg(slf, stackloss, nsamp = "exact")
 ltsmod %>% coef()
+
+fit_all_lmods <- function(data, formula) {
+    # least squares
+    lmod <- lm(formula, data = data)
+    # least absolute deviation
+    lad <- rq(formula, data = data)
+    # Huber method
+    hmod <- rlm(formula, data = data, scale.est = "Huber")
+    # least trimmed squares
+    lts <- ltsreg(formula, data = data, nsamp = "exact")
+
+    return(list("least-squares" = lmod,
+                "least-abs-dev" = lad,
+                "huber" = hmod,
+                "least-trimmed-squares" = lts))
+}
 #+END_SRC
 
 Compare the results. 
@@ -1312,7 +1327,7 @@ Remove these points and then use least squares. Compare the results
 lmod2 %>% tidy()
 #+END_SRC
 
-*** 6. 
+*** 6.
 
 Using the cheddar data, fit a linear model with taste as the response and the other 3 variables as predictors. 
 
@@ -1404,4 +1419,94 @@ This would invalidate that model, leaving us with one of the other models from e
 
 The crawl dataset contains data on a study looking at the age when babies learn to crawl as a function of ambient temperatures. There is additional information about the number of babies studied each month and the variation in response. Make an appropriate choice of weights to investigate the relationship between crawling age and temperature. 
 
+**** Pre 
 
+ #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(crawl, package = "faraway")
+crawl %<>% as_tibble()
+
+skimr::skim(crawl) 
+ #+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+crawl %>%
+    GGally::ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** a. 
+
+Make an appropriate choice of weights to investigate the relationship between crawling age and temperature 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# initial least squares model
+lmod <- lm(crawling ~ temperature, data = crawl)
+lmod %>% summary()
+
+# consider weighting by n | fit got worse 
+wlm <- lm(crawling ~ temperature, data = crawl, weights = (1 / n))
+wlm %>% summary()
+
+# try all the models and compare
+bf <- as.formula(crawling ~ temperature)
+
+mods <- fit_all_lmods(crawl, bf)
+
+mods %>% map(summary)
+
+comp_tbl(models = mods[-4], names(mods[-4])) -> mod_tbl
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+plot_comp_tbl(mod_tbl)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+mod_tbl
+
+crawl %>%
+    ggplot(aes(y = temperature, x = crawling)) +
+    geom_point() +
+    geom_abline(intercept = 35.7,
+                slope = -0.0777,
+                color = "blue") +
+    geom_abline(intercept = 36.2,
+                slope = -0.0780,
+                color = "green") +
+    geom_abline(intercept = 35.8,
+                slope = -0.0767,
+                color = "purple") +
+    geom_abline(intercept = 36.2,
+                slope = -0.0725,
+                color = "yellow")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+boo, this sucks 
+
+*** 8. 
+
+The gammaray dataset shows the x-ray decay light curve of a gamma ray burst. Build a model to predict the flux as a function of time that uses appropriate weights 
+
+**** Pre. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(gammaray, package = "faraway")
+gammaray %<>% as_tibble()
+gammaray
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+gammaray %>%
+    GGally::ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
