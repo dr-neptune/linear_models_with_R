@@ -401,7 +401,6 @@ It essentially looks at the successive residuals, squares them, and normalizes t
 
 The null hypothesis is that the errors are uncorrelated. The null distribution based on the assumption of uncorrelated errors follows a linear combination of Chi Squared distributions.
 
-
 ```{r}
 # run Durbin-Watson statistic
 lmtest::dwtest(nhtemp ~ wusa + jasper + westgreen +

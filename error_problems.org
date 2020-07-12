@@ -1059,7 +1059,6 @@ salmonella %>%
 
 
 
-
 *** 4. 
 
 For the cars dataset, fit a linear model with distance as the response and speed as the predictor. Check for lack of fit 
@@ -1138,16 +1137,271 @@ ggplot(cars, aes(x = speed, y = dist)) +
 
 *** 5. 
 
-Using the stackloss data, fit a model with stack.loss as the response and the other three vars as predictors using the following methods: 
+Using the stackloss data
+
+**** Pre 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(stackloss)
+stackloss %<>% as_tibble()
+
+stackloss %>% skimr::skim() %>% as_tibble()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+stackloss %>%
+    GGally::ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+
+**** fit a model with stack.loss as the response and the other three vars as predictors using the following methods
 
 - Least Squares 
 - Least Absolute Deviations ($L_1$)
 - Huber method
 - Least Trimmed Squares
 
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(nlme)
+library(MASS)
+library(quantreg)
+# set formula 
+slf <- as.formula(stack.loss ~ Air.Flow + Water.Temp + Acid.Conc.)
+
+# least squares 
+lmod <- lm(slf, stackloss)
+lmod %>% tidy()
+
+# least absolute deviation (L1)
+(lad <- rq(data = stackloss, slf))
+lad %>% tidy()
+
+# Huber method
+(hmod <- rlm(slf, data = stackloss, scale.est = "Huber"))
+hmod %>% tidy()
+
+# least trimmed squares
+ltsmod <- ltsreg(slf, stackloss, nsamp = "exact")
+ltsmod %>% coef()
+#+END_SRC
+
 Compare the results. 
 
-Now use diagnostic methods to detect any outliers or influential points. 
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod %>%
+    tidy() %>%
+    mutate(group = "least-squares")
+
+comp_tbl <- function(models, group_names) {
+    models %>%
+        set_names(group_names) %>%
+        imap(., ~ .x %>% tidy() %>% mutate(group = .y)) %>%
+        bind_rows()
+}
+
+list(lmod, lad, hmod, lmod2) %>%
+    comp_tbl(c("least-squares", "least-abs-dev", "huber", "least-squares-2")) -> mod_tbl
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+plot_comp_tbl <- function(data) {
+    data %>%
+        ggplot() +
+        geom_point(aes(x = estimate, y = factor(group), color = group)) +
+        facet_col(~ term, scales = "free_y") +
+        ylab("Model") + xlab("Predictor Coefficient") +
+        coord_flip()
+}
+
+mod_tbl %>%
+    plot_comp_tbl()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** Now use diagnostic methods to detect any outliers or influential points. 
+
+***** Outliers
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+qq_plot <- function(data, choice, title) {
+    data %>%
+        ggplot(aes(sample = {{choice}})) +
+        stat_qq() +
+        stat_qq_line() +
+        ggtitle(title)
+}
+
+qq_plot(stackloss, stack.loss, "Stack Loss")
+
+large_lev_cutoff <- function(model) {
+    # get number of predictors
+    model %>% tidy() %>% nrow() - 1 -> pred_count
+
+    # get amount of data
+    model %>% augment() %>% nrow() -> data_count
+
+    # print message
+    cat(paste0("Returning Leverage Points Over ",
+               round(2 * pred_count / data_count, 2), "\n"))
+
+    # get metric
+    return(2 * pred_count / data_count)
+}
+
+large_lev_cutoff(lmod)
+
+get_large_lev_points <- function(model) {
+    # get cutoff
+    model %>% large_lev_cutoff() -> cutoff_point
+
+    # return hat values
+    model %>%
+        augment() %>%
+        mutate(index = row_number()) %>% 
+        filter(.hat >= cutoff_point) %>%
+   #     select(index, .hat, everything()) %>%
+        arrange(desc(.hat))
+}
+
+get_large_lev_points(lmod)
+
+lmod %>% augment()
+
+gen_leverage_plots <- function(model) {
+    model %>%
+        augment() -> lm_aug
+
+    lm_aug$.hat %>%
+        gghalfnorm::gghalfnorm() -> p1
+
+    lm_aug %>%
+        qq_plot(.std.resid, title = "Standardized Residuals") -> p2
+
+    cowplot::plot_grid(p1, p2, ncol = 1)
+}
+
+lmod %>%
+    get_large_lev_points()
+
+lmod %>%
+    gen_leverage_plots()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+from the plot above, the outlier points are 17 and 2 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+stackloss %>%
+    slice(2)
+
+stackloss %>%
+    slice(17)
+#+END_SRC
 
 Remove these points and then use least squares. Compare the results 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod2 <- lm(slf, stackloss[-c(2, 17), ]))
+lmod2 %>% tidy()
+#+END_SRC
+
+*** 6. 
+
+Using the cheddar data, fit a linear model with taste as the response and the other 3 variables as predictors. 
+
+**** Pre. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(cheddar, package = "faraway")
+cheddar %<>% as_tibble()
+
+cheddar %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+cheddar %>%
+    GGally::ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# make a linear model
+lmod <- lm(taste ~ ., cheddar)
+lmod %>% tidy()
+#+END_SRC
+
+#+RESULTS:
+| term        | estimate | std.error | statistic | p.value |
+|-------------+----------+-----------+-----------+---------|
+| (Intercept) |    -28.9 |      19.7 |      -1.5 |     0.2 |
+| Acetic      |      0.3 |       4.5 |       0.1 |     0.9 |
+| H2S         |      3.9 |       1.2 |       3.1 |     0.0 |
+| Lactic      |     19.7 |       8.6 |       2.3 |     0.0 |
+
+**** a. Suppose that the observations were taken in time order. Create a time variable. Plot the residuals of the model against time and comment on what can be seen 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+
+
+# create a time variable
+cheddar %<>%
+    mutate(time = (Sys.Date() - nrow(cheddar)) + row_number())
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+# plot the residuals against time
+lmod %>%
+    augment() %>%
+    diag_plot(cheddar$time, .resid)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+We see that as time goes on, the model goes from overpredicting to underpredicting taste 
+
+**** b. fit a GLS model with the same form as above, but now allow for an AR(1) correlation among the errors. Is there evidence of such a correlation?
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(glmod <- gls(taste ~ Acetic + H2S + Lactic,
+             correlation = corAR1(form = ~ time),
+             method = "ML",
+             cheddar))
+
+glmod %>% summary()
+#+END_SRC
+
+In the model above we see that the lagged result only counts for 19% of the variance of the result. There is not strong evidence for correlation. 
+
+**** c. Fit a LS model but with time now as an additional predictor. Investigate the significance of time in the model 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod2 <- lm(taste ~ ., cheddar)
+lmod2 %>% summary()
+#+END_SRC
+
+In our new model time is significant at a p-value of 0.013. This is important, but not at the same level as H2S. 
+
+**** d. The last two models have allows for an effect of time. Explain how they do this differently. 
+
+The first model uses time to account for the structure of correlation from one data point to the next. The second model treats time as a predictor variable. 
+
+**** e. Suppose that observations are not in time order. How would this change the interpretation of the model from c? 
+
+This would invalidate that model, leaving us with one of the other models from either part a or part b. 
+
+
+*** 7. 
+
+The crawl dataset contains data on a study looking at the age when babies learn to crawl as a function of ambient temperatures. There is additional information about the number of babies studied each month and the variation in response. Make an appropriate choice of weights to investigate the relationship between crawling age and temperature. 
+
 
