@@ -22,3 +22,43 @@ library(faraway)
 library(broom)
 library(magrittr)
 #+END_SRC
+
+** Transforming the Response 
+
+Suppose we want to use a logged response variable: $\log{y} = \beta_0 + \betax + \epsilon$. Then $y = \exp{\beta_0 + \beta_1 x} \cdot \exp{\epsilon}$.
+
+In this case, the errors enter multiplicatively and not additively as they usually do. 
+
+In practice, we may not know how the errors enter the model, additively, multiplicatively, or otherwise. The best approach is to try different transforms to get the structural form of the model right and then worry aobut the error component later. 
+
+Regression coefficients will need to be interpreted with respect the the transformed scale. There is no straightforward way of back-transforming them to values that can be interpreted in the original scale. You can not directly compare regression coefficients for models where the response transformation is different. 
+
+When you use a log transformation on the response, the regression coefficients have a particular interpretation: 
+
+$\log \hat{y} = \hat{\beta_0} + \hat{\beta_1}x_1 + ... + \hat{\beta_p}x_p$
+$\hat{y} = e^{\hat{\beta_0}}e^{\hat{\beta_1 x_1}}...e^{\hat{\beta_p}x_p}$
+
+An increase of 1 in $x_1$ would multiply the predicted response (in the original scale) by $e^{\hat{\beta_1}}$. 
+
+** Box-Cox Transformation 
+
+The Box-Cox method is a popular way to determine a transformation on the response. It is designed for strictly positive responses and chooses the transformation to find the best fit to the data. 
+
+The method transforms the response $y \to g_{\lambda}(y)$ where the family of transformations indexed by $\lambda$ is $g_{\lambda}(y) = \frac{y^{\lambda} - 1}{\lambda}$ if $\lambda \neq 0$ and $\log(y)$ otherwise.
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(savings, package = "faraway")
+(savings %<>% as_tibble(rownames = "country"))
+
+# fit model 
+lmod <- lm(sr ~ pop15 + pop75 + dpi + ddpi, savings)
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+p1 <- boxcox(lmod, plotit = T)
+p2 <- boxcox(lmod, plotit = T, lambda = seq(0.5, 1.5, by = 0.1))
+p2
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
