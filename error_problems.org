@@ -1510,3 +1510,127 @@ gammaray %>%
 
 #+RESULTS:
 [[file:plot.svg]]
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+gammaray %>%
+    mutate(time = log(time)) %>%
+    GGally::ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod <- lm(log(flux) ~ log(time), gammaray))
+lmod %>% summary()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+gammaray %>%
+    ggplot(aes(x = log(time), y = log(flux))) +
+    geom_point() +
+    geom_abline(slope = lmod$coefficients[[2]],
+                intercept = lmod$coefficients[[1]])
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+*** 9. 
+
+Use the fat data, fitting the model described in section 4.2 
+
+**** Pre. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(fat, package = "faraway")
+
+(fat %<>% as_tibble())
+
+fat %>% skimr::skim()
+
+fform <- as.formula(brozek ~ age + weight + height +
+               neck + chest + abdom + hip +
+               thigh + knee + ankle + biceps +
+               forearm + wrist)
+
+# fit model 
+lmod <- lm(fform, data = fat)
+
+lmod %>% summary()
+#+END_SRC
+
+**** a. 
+
+Fit the same model, but now using Huber's robust method. Comment on any substantial differences between this model and the least squares fit 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod %>% summary()
+
+# fit Huber's model 
+hmod <- rlm(fform, data = fat)
+hmod %>% summary()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+comp_tbl(list(lmod, hmod), c("least-squares", "Huber")) %>%
+    plot_comp_tbl() +
+    coord_flip()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Get model differences in coefficients 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+get_weight_diff(lmod, hmod)
+
+hmod %>% tidy()
+lmod %>% tidy()
+
+hmod %>% glance()
+lmod %>% glance() %>% glimpse()
+#+END_SRC
+
+The coefficients are slightly different. The AIC BIC and log likelihood are the same for both models.
+
+**** b. Identify which two cases have the lowest weights in the Huber fit. What is unusual about these two points? 
+
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# get lowest weights
+(lweights <- tibble("weights" = hmod$w,
+                    "brozek" = fat$brozek,
+                    "rnum" = 1:length(fat$brozek)) %>%
+     arrange(weights))
+
+# check for "unusual-ness"
+lweights %>%
+    slice(1:2)
+
+fat %>%
+    slice(c(224, 207))
+#+END_SRC
+
+They are both fairly close in height and weight, but they have very different brozek values (31.7 ~ 6.1)
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+fat %>%
+    ggplot(aes(y = height, x = weight)) +
+    geom_point()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+We would expect our two outliers to be 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# outliers lower plot and far right
+fat %>%
+    filter(height < 35 | weight > 300) %>%
+    glimpse()
+#+END_SRC
+
+These are not the same as the Huber method's values. This is probably because the Brozek values for these two people, while high, are not particularly strange given the other data. The values that Huber's method left out had very similar values for all the other predictors, but very different Brozek values. 
