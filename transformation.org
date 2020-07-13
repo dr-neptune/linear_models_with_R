@@ -136,5 +136,76 @@ The recommended $\hat{\alpha}$ value is
  pluck(1, 1))
 #+END_SRC
 
-** Transforming the Predictors 
+** Broken Stick Regression 
+
+Sometimes we have reason to believe that different linear regression models apply to different regions of data. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# we could fit two regression models on different subsets of the data
+lmod1 <- lm(sr ~ pop15, savings, subset = (pop15 < 35))
+lmod2 <- lm(sr ~ pop15, savings, subset = (pop15 >= 35))
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+savings %>%
+    ggplot(aes(x = pop15, y = sr)) +
+    geom_point() +
+    geom_segment(intercept = lmod1$coefficients[[1]],
+                slope = lmod1$coefficients[[2]],
+                color = "blue") +
+    geom_vline(xintercept = 35, lty = 2) + 
+    geom_abline(intercept = lmod2$coefficients[[1]],
+                slope = lmod2$coefficients[[2]],
+                color = "green")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+A possible objection is that two two parts of the fit do not meet at the join. If we believe that the fit should be continuous as the predictor varies, we should consider the broken stick regression fit. 
+
+Define two basis functions: 
+
+$B_l(x) = c - x$ if $x < c$ and 0 otherwise
+$B_r(x) = x - c$ if $x > c$ and 0 otherwise 
+
+where $c$ marks the division between the two groups. We can now fit a model of the form: 
+
+$y = \beta_0 + \beta_1 B_l(x) + \beta_2 B_r(x) + \epsilon$
+
+The two linear parts are guaranteed to meet at $c$. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+hockey_stick_lm <- function(data, formula, cutoff) {
+    lhs <- function(x) ifelse(x < cutoff, cutoff - x, 0)
+    rhs <- function(x) ifelse(x >= cutoff, x - cutoff, 0)
+    # such hack, much wow
+    new_formula <- as.formula(paste0(deparse(formula[[2]]),
+                                     " ~ lhs(",
+                                     deparse(formula[[3]]),
+                                     ") + rhs(",
+                                     deparse(formula[[3]]), ")"))
+    lm(new_formula, data)
+}
+
+(hslmod <- hockey_stick_lm(savings, as.formula(sr ~ pop15), 35))
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+savings %>%
+    ggplot(aes(x = pop15, y = sr)) +
+    geom_point() +
+    geom_vline(xintercept = 35, color = "blue", alpha = 0.1) + 
+    geom_line(data = tibble("sr" = hslmod$fitted.values,
+                            "pop15" = savings$pop15),
+              aes(x = pop15, y = sr),
+              lty = 2)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+** Polynomials 
+
+Another way of generalizing the $X \beta$ part of the model is to add polynomial terms. 
 
