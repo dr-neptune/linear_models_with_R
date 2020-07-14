@@ -212,54 +212,93 @@ Another way of generalizing the $X \beta$ part of the model is to add polynomial
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 tidy(lm(sr ~ ddpi, savings))
 
-# wooow. Now I just need to figure out how to reverse the build so we have order + 1 -> order
-boost <- function(formula, order, expr = NULL) {
+# wooow
+boost <- function(formula, order, count = 2) {
     term <- frm[[3]]
-    if (order == 1) return(formula)
+    if (order == (count - 1)) return(formula)
     else {
-        formula[[3]] <- bquote(.(formula[[3]]) + I(.(term)^.(order)))
-        boost(formula, (order - 1))
+        formula[[3]] <- bquote(.(formula[[3]]) + I(.(term)^.(count)))
+        boost(formula, order, count + 1)
     }
 }
-
-form2 <- boost(frm, 5)
-tidy(lm(form2, savings))
-
 
 frm <- as.formula(sr ~ ddpi)
 
-term <- frm[[3]]
+(form2 <- boost(frm, 3))
 
-(frm[[3]] <- bquote(.(frm[[3]]) + I(.(term)^4)))
-
-frm
-
-form2[[1]]
-
-frm[[3]] %>% typeof()
-frm[[3]]
-frm[[3]] <- bquote(.(frm[[3]]) + I(ddpi^2))
-frm[[3]] <- bquote(.(frm[[3]]) + I(.(frm[[3]][[2]])^3))
-
-frm[[3]][[2]]
-
-lmod <- tidy(lm(frm, savings))
-lmod %>% pluck(ncol(.), nrow(.))
-
-
-
-build_you_a_polynomial_regression <- function(data, formula, cutoff = 0.05, model = NULL) {
-    boost <- function(formula, order) {
-        formula[[3]] <- bquote(.(formula[[3]]) + I(.(formula[[3]][[2]])^.(order)))
-    }
+# takes data, a formula, and a cutoff and returns a polynomial regression at the order for which the predictors stop being significant.
+# Assumes an order 1 formula with only 1 predictor
+build_you_a_polynomial_regression <- function(data, formula, cutoff = 0.05, order = 1, old_model = NULL) {    
+    # make lmod, get p-value and test if below cutoff for predictor
+    lmod <- lm(formula, data)
+    p_val <- tidy(lmod) %>% pluck(ncol(.), nrow(.))
     
-    if (model == NULL) {
-        lmod <- lm(formula, data)
-        p_val <- lmod %>% pluck(ncol(.), nrow(.))
-        if (p_val <= cutoff) lmod
-        else build_you_a_polynomial_regression(data, boost(formula, 2))
+    if (p_val < cutoff) {
+        # recurse and increase the order of the formula
+        build_you_a_polynomial_regression(data, boost(formula, order + 1), order = (order + 1), cutoff = cutoff, old_model = lmod)
     } else {
-        
+        # return the linear model of order - 1
+        ## lm(boost(formula, (order - 1)), data)
+        old_model
     }
 }
+
+tidy(build_you_a_polynomial_regression(savings, as.formula(sr ~ ddpi)))
+
+# test against manual
+tidy(lm(frm, savings)) %>% pluck(ncol(.), nrow(.))
+tidy(lm(boost(frm, 2), savings)) %>% pluck(ncol(.), nrow(.))
+tidy(lm(boost(frm, 3), savings)) %>% pluck(ncol(.), nrow(.))
 #+END_SRC
+
+If you remove lower order terms from a polynomial, do note that it has special meaning. Setting the intercept to 0 means the regression passes through the origin, which setting the linear term to 0 means that the response is optimized at a predictor value of 0. 
+
+You have to refit the model each time a term is removed. This is inconvenient, and for large $d$ there can be a problem with numerical stability. Orthogonal polynomials get around this problem by defining: 
+
+$z_1 = a_1 + b_1 x$
+$z_2 = a_2 + b_2x + c_2x^2$
+$z_3 = a_3 + b_3x + c_3 c^2 + d_3 x^3$
+$z_n = a_1 + b_1x + ... + \xi_n x^n$
+
+where the coefficients $a, b, ...$ are chosen so that $z_i^T z_j = 0$ when $i \neq j$. The expressions $z$ are called orthogonal polynomials. The poly() function constructs orthogonal polynomials. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod <- lm(sr ~ poly(ddpi, 4), savings))
+summary(lmod)
+#+END_SRC
+
+We can also define polynomials in more than one variable. These are sometimes called response surface models.
+
+A second degree model would be $y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_{11}x_1^2 + \beta_{22}x_2^2 + \beta_{12}x_1x_2$
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod <- lm(sr ~ polym(pop15, ddpi, degree = 2), savings))
+lmod %>% tidy()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+library(plotly)
+
+# rows and columns describe a grid, and the cell value describes surface height
+savings
+
+pop15r <- seq(20, 50, len = 50)
+ddpir <- seq(0, 20, len = 50)
+pgrid <- expand.grid(pop15 = pop15r,
+                     ddpi = ddpir)
+pv <- predict(lmod, pgrid)
+(outp <- matrix(pv, 50, 50))
+
+plot_ly(z = outp, y = pop15r, x = ddpir, 
+        type = "surface",
+        contours = list(x = list(show = TRUE),
+                        y = list(show = TRUE))## ,
+                        ## z = list(show = TRUE))
+        ) %>%
+    layout(title = "Perspective Plot of Quadratic Surface",
+           scene = list(
+               yaxis = list(title = "Popn Under 15"),
+               xaxis = list(title = "Growth"),
+               zaxis = list(title = "Savings Rate")))
+#+END_SRC
+
