@@ -209,3 +209,57 @@ savings %>%
 
 Another way of generalizing the $X \beta$ part of the model is to add polynomial terms. 
 
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+tidy(lm(sr ~ ddpi, savings))
+
+# wooow. Now I just need to figure out how to reverse the build so we have order + 1 -> order
+boost <- function(formula, order, expr = NULL) {
+    term <- frm[[3]]
+    if (order == 1) return(formula)
+    else {
+        formula[[3]] <- bquote(.(formula[[3]]) + I(.(term)^.(order)))
+        boost(formula, (order - 1))
+    }
+}
+
+form2 <- boost(frm, 5)
+tidy(lm(form2, savings))
+
+
+frm <- as.formula(sr ~ ddpi)
+
+term <- frm[[3]]
+
+(frm[[3]] <- bquote(.(frm[[3]]) + I(.(term)^4)))
+
+frm
+
+form2[[1]]
+
+frm[[3]] %>% typeof()
+frm[[3]]
+frm[[3]] <- bquote(.(frm[[3]]) + I(ddpi^2))
+frm[[3]] <- bquote(.(frm[[3]]) + I(.(frm[[3]][[2]])^3))
+
+frm[[3]][[2]]
+
+lmod <- tidy(lm(frm, savings))
+lmod %>% pluck(ncol(.), nrow(.))
+
+
+
+build_you_a_polynomial_regression <- function(data, formula, cutoff = 0.05, model = NULL) {
+    boost <- function(formula, order) {
+        formula[[3]] <- bquote(.(formula[[3]]) + I(.(formula[[3]][[2]])^.(order)))
+    }
+    
+    if (model == NULL) {
+        lmod <- lm(formula, data)
+        p_val <- lmod %>% pluck(ncol(.), nrow(.))
+        if (p_val <= cutoff) lmod
+        else build_you_a_polynomial_regression(data, boost(formula, 2))
+    } else {
+        
+    }
+}
+#+END_SRC
