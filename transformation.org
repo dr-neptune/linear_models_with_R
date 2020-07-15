@@ -213,8 +213,8 @@ Another way of generalizing the $X \beta$ part of the model is to add polynomial
 tidy(lm(sr ~ ddpi, savings))
 
 # wooow
-boost <- function(formula, order, count = 2) {
-    term <- frm[[3]]
+boost <- function(formula, order, count = 2, base_frm = NULL) {
+    term <- formula[[3]]
     if (order == (count - 1)) return(formula)
     else {
         formula[[3]] <- bquote(.(formula[[3]]) + I(.(term)^.(count)))
@@ -222,24 +222,39 @@ boost <- function(formula, order, count = 2) {
     }
 }
 
-frm <- as.formula(sr ~ ddpi)
+boost <- function(formula, order) {
+    term <- formula[[3]]
+    bup <- function(formula, count) {
+        if (order == (count - 1)) return(formula)
+        else {
+            formula[[3]] <- bquote(.(formula[[3]]) + I(.(term)^.(count)))
+            bup(formula, count + 1)
+        }
+    }
+    bup(formula, 2)
+}
 
-(form2 <- boost(frm, 3))
+(frm <- as.formula(sr ~ ddpi))
+
+(form2 <- boost(frm, 5))
 
 # takes data, a formula, and a cutoff and returns a polynomial regression at the order for which the predictors stop being significant.
 # Assumes an order 1 formula with only 1 predictor
 build_you_a_polynomial_regression <- function(data, formula, cutoff = 0.05, order = 1, old_model = NULL) {    
     # make lmod, get p-value and test if below cutoff for predictor
     lmod <- lm(formula, data)
+    cat("yes lmod\n\n")
     p_val <- tidy(lmod) %>% pluck(ncol(.), nrow(.))
-    
+    cat("yes pval\n\n")
     if (p_val < cutoff) {
         # recurse and increase the order of the formula
+        cat("Woo-eee, here is the order!", order, "\n\n")
         build_you_a_polynomial_regression(data, boost(formula, order + 1), order = (order + 1), cutoff = cutoff, old_model = lmod)
     } else {
         # return the linear model of order - 1
-        ## lm(boost(formula, (order - 1)), data)
-        old_model
+        cat("here we goooo\n\n")
+        if (order == 1) lmod
+        else old_model
     }
 }
 
@@ -292,9 +307,7 @@ pv <- predict(lmod, pgrid)
 plot_ly(z = outp, y = pop15r, x = ddpir, 
         type = "surface",
         contours = list(x = list(show = TRUE),
-                        y = list(show = TRUE))## ,
-                        ## z = list(show = TRUE))
-        ) %>%
+                        y = list(show = TRUE))) %>%
     layout(title = "Perspective Plot of Quadratic Surface",
            scene = list(
                yaxis = list(title = "Popn Under 15"),
@@ -302,3 +315,44 @@ plot_ly(z = outp, y = pop15r, x = ddpir,
                zaxis = list(title = "Savings Rate")))
 #+END_SRC
 
+** Splines 
+
+Polynomials have the advantage of smoothness, but each data point affects the fit globally. This is because the power functions used for the polynomials take nonzero values across the whole range of the predictor. In contrast, broken stick regression localizes the influence of each data point to its particular segemtn, but we do not have the same smoothness of the polynomials. We can combine the beneficial aspects of both of these methods - smoothness and local influence - by using B-spline basis functions. 
+
+Suppose we know the true model is: 
+
+$y = \sin^3(2 \pi x^3) + \epsilon$
+$\epsilon \sim N(0, (0.1)^2)$
+
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+funky <- function(x) sin(2 * pi * x^3)^3
+
+plt <- tibble("x" = seq(0, 1, by = 0.01),
+              "y" = funky(x) + 0.1 * rnorm(101))
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+matplot(x, cbind(y, funky(x)), type = "pl", ylab = "y", pch = 20, lty = 1, col = 1)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+plt %>%
+    ggplot(aes(x = x, y = y)) +
+    geom_point() +
+    geom_line(aes(x = x, y = funky(x)), color = "blue", alpha = 0.3)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+build_you_a_polynomial_regression(data = plt, formula = boost(as.formula(y ~ x), 2))
+
+boost(y ~ x, 5)
+
+tidy(lm(boost(y ~ x, 2), plt)) %>% pluck(ncol(.), nrow(.))
+#+END_SRC
