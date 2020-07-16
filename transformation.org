@@ -210,18 +210,6 @@ savings %>%
 Another way of generalizing the $X \beta$ part of the model is to add polynomial terms. 
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
-tidy(lm(sr ~ ddpi, savings))
-
-# wooow
-boost <- function(formula, order, count = 2, base_frm = NULL) {
-    term <- formula[[3]]
-    if (order == (count - 1)) return(formula)
-    else {
-        formula[[3]] <- bquote(.(formula[[3]]) + I(.(term)^.(count)))
-        boost(formula, order, count + 1)
-    }
-}
-
 boost <- function(formula, order) {
     term <- formula[[3]]
     bup <- function(formula, count) {
@@ -235,28 +223,67 @@ boost <- function(formula, order) {
 }
 
 (frm <- as.formula(sr ~ ddpi))
+frm2 <- boost(frm, 5)
+frm
+frm2
 
-(form2 <- boost(frm, 5))
+byapr <- function(data, formula, cutoff = 0.05) {
+    order <- 1
+    repeat {
+        new_form <- boost(formula, order)
+        lmod <- lm(new_form, data)
+        p_val <- tidy(lmod) %>% pluck(ncol(.), nrow(.))
+        if (p_val > cutoff) break
+        else order <- order + 1
+    }
+    lm(boost(formula, order - 1), data)
+}
+
+byapr(plt, y ~ x + I(x^2))
+byapr(savings, frm)
+
+tidy(lm(y ~ x + I(x^2) + I(x^3), plt))
 
 # takes data, a formula, and a cutoff and returns a polynomial regression at the order for which the predictors stop being significant.
 # Assumes an order 1 formula with only 1 predictor
-build_you_a_polynomial_regression <- function(data, formula, cutoff = 0.05, order = 1, old_model = NULL) {    
+build_you_a_polynomial_regression <- function(data, formula, cutoff = 0.05, order = 1) {    
     # make lmod, get p-value and test if below cutoff for predictor
     lmod <- lm(formula, data)
-    cat("yes lmod\n\n")
     p_val <- tidy(lmod) %>% pluck(ncol(.), nrow(.))
-    cat("yes pval\n\n")
     if (p_val < cutoff) {
         # recurse and increase the order of the formula
-        cat("Woo-eee, here is the order!", order, "\n\n")
-        build_you_a_polynomial_regression(data, boost(formula, order + 1), order = (order + 1), cutoff = cutoff, old_model = lmod)
+        cat("\n--------------\nOrder:", order, "\np-value:", p_val, "\nFormula:", deparse(formula), "\n--------------\n")
+        new_form <- boost(formula, order)
+        build_you_a_polynomial_regression(data, new_form, order = (order + 1), cutoff = cutoff)
     } else {
         # return the linear model of order - 1
         cat("here we goooo\n\n")
-        if (order == 1) lmod
-        else old_model
+        lmod
     }
 }
+
+byapr <- function(data, formula, cutoff = 0.05, order = 2) {
+    build_up <- function(frm, order) {
+        new_form <- boost(formula, order + 1)
+        lmod <- lm(frm, data)
+        p_val <- tidy(lmod) %>% pluck(ncol(.), nrow(.))
+        if (p_val < cutoff) {
+            cat("\n--------------\nOrder:", order, "\np-value:", p_val, "\nFormula:", deparse(frm), "\n--------------\n")
+            build_up(new_form, order + 1)
+        } else {
+            lmod
+        }
+    }
+    
+    build_up(formula, order)
+}
+
+
+
+frm2 <- as.formula(y ~ x)
+boost(boost(boost(frm2, 2), 3), 3)
+
+build_you_a_polynomial_regression(data = plt, formula = boost(as.formula(y ~ x), 2))
 
 tidy(build_you_a_polynomial_regression(savings, as.formula(sr ~ ddpi)))
 
@@ -352,7 +379,7 @@ plt %>%
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 build_you_a_polynomial_regression(data = plt, formula = boost(as.formula(y ~ x), 2))
 
-boost(y ~ x, 5)
+boost(y ~ x, 4)
 
 tidy(lm(boost(y ~ x, 2), plt)) %>% pluck(ncol(.), nrow(.))
 #+END_SRC
