@@ -222,30 +222,9 @@ boost <- function(formula, order) {
     bup(formula, 2)
 }
 
-(frm <- as.formula(sr ~ ddpi))
-frm2 <- boost(frm, 5)
-frm
-frm2
-
-byapr <- function(data, formula, cutoff = 0.05) {
-    order <- 1
-    repeat {
-        new_form <- boost(formula, order)
-        lmod <- lm(new_form, data)
-        p_val <- tidy(lmod) %>% pluck(ncol(.), nrow(.))
-        if (p_val > cutoff) break
-        else order <- order + 1
-    }
-    lm(boost(formula, order - 1), data)
-}
-
-byapr(plt, y ~ x + I(x^2))
-byapr(savings, frm)
-
-tidy(lm(y ~ x + I(x^2) + I(x^3), plt))
-
 # takes data, a formula, and a cutoff and returns a polynomial regression at the order for which the predictors stop being significant.
 # Assumes an order 1 formula with only 1 predictor
+# THIS DOES NOT WORK :( but time is finite
 build_you_a_polynomial_regression <- function(data, formula, cutoff = 0.05, order = 1) {    
     # make lmod, get p-value and test if below cutoff for predictor
     lmod <- lm(formula, data)
@@ -261,28 +240,8 @@ build_you_a_polynomial_regression <- function(data, formula, cutoff = 0.05, orde
         lmod
     }
 }
-
-byapr <- function(data, formula, cutoff = 0.05, order = 2) {
-    build_up <- function(frm, order) {
-        new_form <- boost(formula, order + 1)
-        lmod <- lm(frm, data)
-        p_val <- tidy(lmod) %>% pluck(ncol(.), nrow(.))
-        if (p_val < cutoff) {
-            cat("\n--------------\nOrder:", order, "\np-value:", p_val, "\nFormula:", deparse(frm), "\n--------------\n")
-            build_up(new_form, order + 1)
-        } else {
-            lmod
-        }
-    }
-    
-    build_up(formula, order)
-}
-
-
-
+ 
 frm2 <- as.formula(y ~ x)
-boost(boost(boost(frm2, 2), 3), 3)
-
 build_you_a_polynomial_regression(data = plt, formula = boost(as.formula(y ~ x), 2))
 
 tidy(build_you_a_polynomial_regression(savings, as.formula(sr ~ ddpi)))
@@ -370,7 +329,9 @@ matplot(x, cbind(y, funky(x)), type = "pl", ylab = "y", pch = 20, lty = 1, col =
 plt %>%
     ggplot(aes(x = x, y = y)) +
     geom_point() +
-    geom_line(aes(x = x, y = funky(x)), color = "blue", alpha = 0.3)
+    geom_line(aes(x = x, y = funky(x)), color = "blue", alpha = 0.5) +
+    geom_line(aes(x = x, y = predict(lm(boost(y ~ x, 4), plt))), lty = 2, alpha = 0.5, color = "forestgreen") +
+    geom_line(aes(x = x, y = predict(lm(boost(y ~ x, 12), plt))), lty = 5, alpha = 0.5, color = "mediumpurple")
 #+END_SRC
 
 #+RESULTS:
@@ -381,5 +342,16 @@ build_you_a_polynomial_regression(data = plt, formula = boost(as.formula(y ~ x),
 
 boost(y ~ x, 4)
 
+(lmod2 <- lm(boost(y ~ x, 5), plt))
+
 tidy(lm(boost(y ~ x, 2), plt)) %>% pluck(ncol(.), nrow(.))
 #+END_SRC
+
+We may define a cubic B-spline basis on the interval [a, b] by the following requirements on the interior basis functions with knotpoints at $t_1, ..., t_k$: 
+
+1. A given basis function is nonzero on an interval defined by four successive knots and zero elsewhere. This property ensures the local influence property
+2. The basis function is a cubic polynomial for each subinterval between successive knots
+3. The basis function is continuous and is also continuous in its first and second derivatives at each knotpoint. This property ensures the smoothness of the fit.
+4. The basis function integrates to one over its support. 
+
+
