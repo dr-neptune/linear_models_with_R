@@ -314,6 +314,9 @@ $\epsilon \sim N(0, (0.1)^2)$
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 funky <- function(x) sin(2 * pi * x^3)^3
 
+x <- seq(0, 1, by = 0.01)
+y <- funky(x) + 0.1 * rnorm(101)
+
 plt <- tibble("x" = seq(0, 1, by = 0.01),
               "y" = funky(x) + 0.1 * rnorm(101))
 #+END_SRC
@@ -353,5 +356,224 @@ We may define a cubic B-spline basis on the interval [a, b] by the following req
 2. The basis function is a cubic polynomial for each subinterval between successive knots
 3. The basis function is continuous and is also continuous in its first and second derivatives at each knotpoint. This property ensures the smoothness of the fit.
 4. The basis function integrates to one over its support. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+require(splines)
+
+# 12 basis functions, 3 additional knots at the start and end
+knots <- c(0, 0, 0, 0,
+           0.2, 0.4, 0.5, 0.6,
+           0.7, 0.8, 0.85, 0.9,
+           1, 1, 1, 1)
+
+(bx <- splineDesign(knots, x))
+
+lmodb <- lm(y ~ bx -1)
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+matplot(x, bx, type = "l", col = 1)
+
+bx2 <- as.data.frame(bx)
+bx2$id <- 1:nrow(bx2)
+
+bx2 <- melt(bx2, id.var = "id")
+
+ggplot(bx2, aes(x = id, y = value, group = variable, color = variable)) +
+    geom_line(lty = 2, alpha = 0.8) +
+    theme(legend.position = "none")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+ggplot(plt, aes(x = x, y = y)) +
+    geom_point() +
+    geom_line(aes(x = x, y = lmodb$fit), lty = 2, color = "blue", alpha = 0.5)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+A related alternative to regression splines is smoothing splines. Suppose we choose $\hat{f}$ to minimize a modified least squares criterion 
+$\frac{1}{n} \sum (Y_i - f(x_i))^2 + \lambda \int [f^{''}(x)]^2 dx$
+
+where $\lambda > 0$ controls the amount of smoothing and $\int [f^{''}(x)]^2 dx$ is a roughness penalty. When $f$ is rough, the penalty is large, but when $f$ is smooth the penalty is small. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(ssf <- smooth.spline(x, y))
+#+END_SRC 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+ggplot(plt, aes(x = x, y = y)) +
+    geom_point() +
+    geom_line(aes(x = x, y = ssf$y), lty = 2, alpha = 0.5, color = "blue")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+** Additive Models 
+
+Searching for good transformations on predictors is difficult when there are multiple predictors. Changing the transformation on one predictor may change the best choice of transformation on another predictor. Fortunately, there is a way to simultaneously choose the transformations: 
+
+An additive model takes the form: 
+
+$y = \alpha + f_1(X_1) + f_2(X_2) + ... + f_p(X_p) + \epsilon$
+
+The linear terms of the form $\beta_i X_i$ have been replaced with more flexible functional forms $f_i(X_i)$.
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+require(mgcv)
+
+(gamod <- gam(sr ~ s(pop15) + s(pop75) + s(dpi) + s(ddpi), data = savings))
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+library(mgcViz)
+
+print(plot(getViz(gamod), allterms = T), pages = 1)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+** Exercises
+
+*** 1. 
+
+**** Pre 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(aatemp, package = "faraway")
+(aatemp %<>% as_tibble())
+
+aatemp %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+aatemp %>%
+    ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** a.  
+
+Is there a linear trend?
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod <- lm(temp ~ year, aatemp))
+#+END_SRC
+
+Not really. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+aatemp %>%
+    ggplot(aes(x = year, y = temp)) +
+    geom_point() +
+    geom_abline(intercept = lmod$coefficients[[1]],
+                slope = lmod$coefficients[[2]],
+                lty = 2, color = "blue")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** b. 
+
+Observations in successive years may be correlated. Fit a model that estimates this correlation. Does this change your opinion about the trend? 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(glmod <- gls(temp ~ year, correlation = corAR1(form = ~year), aatemp))
+#+END_SRC
+
+Our generalized least squares model with an ARMA(1, 0) coefficient for the yearly correlation gives a phi value of .23, or roughly the previous points account for 23% of the variance of the next point. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+aatemp %>%
+    ggplot(aes(x = year, y = temp)) +
+    geom_point() +
+    geom_abline(intercept = glmod$coefficients[[1]],
+                slope = glmod$coefficients[[2]],
+                lty = 2, color = "blue")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+This doesn't change my opinion. 
+
+**** c. 
+
+Fit a polynomial model with degree 10 and use backward elimination to reduce the degree of the model. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+boost(temp ~ year, order = 10)
+
+aatemp_mods <- map(10:1, ~ lm(boost(temp ~ year, order = .x), data = aatemp))
+
+predict(aatemp_mods[[1]], newdata = tibble("year" = 2020))
+
+
+
+plot_all_mods <- function(data, models) {
+    plot_recurse <- function(plot_base, count) {
+        if (count == length(models)) {
+            plot_base
+        } else {
+            plot_base +
+                geom_line(aes(x = year, y = predict(models[[count]], data)), color = "blue", alpha = (1 / count)) -> plot_base
+            plot_recurse(plot_base, (count + 1))
+        }
+    }
+
+    data %>%
+        ggplot(aes(x = year, y = temp)) +
+        geom_point(alpha = 0.3) -> supah_base
+    
+    plot_recurse(supah_base, 1)
+}
+#+END_SRC
+
+Plot your fitted model on top of the data. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+(plot_all_mods(aatemp, aatemp_mods) +
+    ggtitle("Polynomial Fits on Top of aayears") -> all_polynomials)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Use this model to predict the temperature in 2020 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+aatemp_mods %>%
+    map(., ~ predict(.x, newdata = tibble("year" = 2020))) %>%
+    flatten_dbl() %>%
+    as_tibble() %>%
+    mutate("year" = 2020, "degree" = 10:1) %>% 
+    rename("temp" = value) -> new_preds
+
+all_polynomials +
+    geom_point(data = new_preds, aes(x = year, y = temp, group = degree, color = degree)) +
+    scale_color_continuous() +
+    ggforce::facet_zoom(xlim = c(2020, 2020),
+                        zoom.size = 3)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** d. 
+
+Suppose someone claims that a temperature was constant until 1930 and then began a linear trend. Fit a model corresponding to this claim. 
+
+
+
+Use this model to predict the temperature in 2020. 
 
 
