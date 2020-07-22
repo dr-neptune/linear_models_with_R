@@ -150,9 +150,9 @@ lmod2 <- lm(sr ~ pop15, savings, subset = (pop15 >= 35))
 savings %>%
     ggplot(aes(x = pop15, y = sr)) +
     geom_point() +
-    geom_segment(intercept = lmod1$coefficients[[1]],
-                slope = lmod1$coefficients[[2]],
-                color = "blue") +
+    ## geom_segment(intercept = lmod1$coefficients[[1]],
+    ##             slope = lmod1$coefficients[[2]],
+    ##             color = "blue") +
     geom_vline(xintercept = 35, lty = 2) + 
     geom_abline(intercept = lmod2$coefficients[[1]],
                 slope = lmod2$coefficients[[2]],
@@ -190,6 +190,7 @@ hockey_stick_lm <- function(data, formula, cutoff) {
 
 (hslmod <- hockey_stick_lm(savings, as.formula(sr ~ pop15), 35))
 #+END_SRC
+
 
 #+BEGIN_SRC R :file plot.svg :results graphics file
 savings %>%
@@ -572,8 +573,68 @@ all_polynomials +
 
 Suppose someone claims that a temperature was constant until 1930 and then began a linear trend. Fit a model corresponding to this claim. 
 
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+hslm <- function(data, formula, cutoff, formula2 = NULL) {
+    lhs <- function(x) ifelse(x < cutoff, cutoff - x, 0)
+    rhs <- function(x) ifelse(x >= cutoff, x - cutoff, 0)
+    if (!is.null(formula2)) {
+        new_formula <- as.formula(paste0(deparse(formula[[2]]),
+                                  " ~ lhs(",
+                                  deparse(formula[[3]]),
+                                  ") + rhs(",
+                                  deparse(formula2[[3]]),
+                                  ")"))
+        lm(new_formula, data)
+    } else {
+        hockey_stick_lm(data, formula, cutoff)
+    }
+}
 
+(hslm_out <- hslm(data = aatemp, formula = as.formula("temp ~ year"), formula2 = as.formula("temp ~ year"), cutoff = 1930))
+#+END_SRC
 
 Use this model to predict the temperature in 2020. 
 
+#+BEGIN_SRC R :file plot.svg :results graphics file
+aatemp %>%
+    ggplot(aes(x = year, y = temp)) +
+    geom_point() +
+    geom_vline(xintercept = 1930, color = "blue", alpha = 0.1) + 
+    geom_line(data = tibble("temp" = hslm_out$fitted.values,
+                            "year" = aatemp$year),
+              aes(x = year, y = temp),
+              lty = 2)
+#+END_SRC
 
+#+RESULTS:
+[[file:plot.svg]]
+
+The fitted model says that the rate of temperature increase has decreased roughly 3 fold in the period after 1930 from the period before 1930. 
+
+**** e. 
+
+Make a cubic spline fit with six basis functions evenly spaced on the range. Plot the fit in comparison to the previous fits. Does this model fit better than the straight line model? 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+knots <- c(0, 0, 0, 0,
+           0.2, 0.4, 0.5, 0.6,
+           0.7, 0.8, 0.85, 0.9,
+           1, 1, 1, 1)
+
+knots <- seq(from = extract2(range(aatemp$year), 1), to = extract2(range(aatemp$year), 2), length.out = 7)
+
+(bx <- splineDesign(knots, aatemp$year, outer.ok = TRUE))
+
+(lmodb <- lm(aatemp$temp ~ bx -1))
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+ggplot(aatemp, aes(x = year, y = temp)) +
+    geom_point() +
+    geom_line(aes(x = year, y = lmodb$fit), lty = 2, color = "blue", alpha = 0.5)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Wow this looks bad. I think something was wrong 
