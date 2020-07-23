@@ -57,7 +57,7 @@ lmod <- lm(sr ~ pop15 + pop75 + dpi + ddpi, savings)
 #+BEGIN_SRC R :file plot.svg :results graphics file
 p1 <- boxcox(lmod, plotit = T)
 p2 <- boxcox(lmod, plotit = T, lambda = seq(0.5, 1.5, by = 0.1))
-p2
+p1
 #+END_SRC
 
 #+RESULTS:
@@ -95,6 +95,31 @@ bc_out %>%
 
 (lmod2 <- lm(((Species^lambda_out - 1) / lambda_out) ~ Area + Elevation + Nearest + Scruz + Adjacent, gala))
 lmod2 %>% summary()
+
+as.formula(subsitute(lmod$call[[2]][[2]]^2 - 1) ~ yes)
+
+bc_trans <- function(lmod, return_model = TRUE) {
+    # get the boxcox diagnostic
+    bc <- boxcox(lmod, plotit = FALSE)
+    # get results into a tibble
+    bc_out <- tibble("lambda" = bc$x,
+                     "log_likelihood" = bc$y) %>%
+        arrange(desc(log_likelihood)) %>%
+        # grab MLE for lambda
+        pluck(1, 1)
+
+    if (return_model) {
+        resp <- lmod$call[[2]][[2]]
+        preds <- lmod$call[[2]][[3]]
+        new_formula <- as.formula(substitute(((resp^(bc_out) - 1) / bc_out) ~ preds))
+        lm(new_formula, lmod$model)
+    } else {
+        bc_out
+    }
+}
+
+lmod %>% glance()
+bc_trans(lmod) %>% glance()
 #+END_SRC
 
 #+BEGIN_SRC R :file plot.svg :results graphics file
@@ -603,7 +628,8 @@ aatemp %>%
     geom_line(data = tibble("temp" = hslm_out$fitted.values,
                             "year" = aatemp$year),
               aes(x = year, y = temp),
-              lty = 2)
+              lty = 2) +
+    ylim(0, 70)
 #+END_SRC
 
 #+RESULTS:
@@ -616,25 +642,107 @@ The fitted model says that the rate of temperature increase has decreased roughl
 Make a cubic spline fit with six basis functions evenly spaced on the range. Plot the fit in comparison to the previous fits. Does this model fit better than the straight line model? 
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
-knots <- c(0, 0, 0, 0,
-           0.2, 0.4, 0.5, 0.6,
-           0.7, 0.8, 0.85, 0.9,
-           1, 1, 1, 1)
-
-knots <- seq(from = extract2(range(aatemp$year), 1), to = extract2(range(aatemp$year), 2), length.out = 7)
+(knots <- seq(from = extract2(range(aatemp$year), 1), to = extract2(range(aatemp$year), 2), length.out = 7) %>% floor() %>% as.integer())
+knots <- c(1854, 1854, 1854, 1854,
+           knots,
+           2000, 2000, 2000, 2000)
 
 (bx <- splineDesign(knots, aatemp$year, outer.ok = TRUE))
 
 (lmodb <- lm(aatemp$temp ~ bx -1))
 #+END_SRC
 
+#+RESULTS:
+: nil
+
 #+BEGIN_SRC R :file plot.svg :results graphics file
 ggplot(aatemp, aes(x = year, y = temp)) +
     geom_point() +
-    geom_line(aes(x = year, y = lmodb$fit), lty = 2, color = "blue", alpha = 0.5)
+    geom_line(aes(x = year, y = lmodb$fitted.values), lty = 2, color = "blue", alpha = 0.5)
 #+END_SRC
 
 #+RESULTS:
 [[file:plot.svg]]
 
-Wow this looks bad. I think something was wrong 
+Does this model fit better than the straight line model? 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmodb %>% glance()
+hslm_out %>% glance()
+lmod %>% glance()
+#+END_SRC
+
+yes, very much so. I would not trust an adjusted R^2 of .999 though. 
+
+*** 2. 
+
+The cornnit data on the relationship between corn yields (bushels per acre) and nitrogen (pounds per acre) fertilizer application were studied in Wisconsin in 1994. 
+
+Use transformations to find a good model for predicting yield from nitrogen. Use a goodness-of-fit test to check your model.
+
+**** Pre
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(cornnit %<>% as_tibble())
+
+cornnit %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+cornnit %>% ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** a. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(baseline <- lm(yield ~ nitrogen, cornnit))
+baseline %>% glance()
+
+# box cox transform 
+bc_trans(baseline) %>% glance()
+lambda_out <- bc_trans(baseline, return_model = FALSE)
+#+END_SRC
+
+It has gotten better, but about a 2% increase for both the regular R^2 and adjusted R^2 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+p1 <- qq_plot(cornnit, yield, "Yield")
+p2 <- qq_plot(cornnit, yield^2, "Yield Squared")
+p1 + p2
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+*** 3.
+
+Using the ozone data, fit a model with O3 as the response and temp, humidity, and ibh as predictors. Use the Box-Cox method to determine the best transformation on the response 
+
+**** Pre. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(ozone %<>% as_tibble())
+ozone %>% skimr::skim()
+#+END_SRC
+
+**** a. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(baseline <- lm(O3 ~ temp + humidity + ibh, ozone))
+baseline %>% glance()
+
+bc_trans(baseline) %>% glance()
+bc_trans(baseline, return_model = FALSE)
+
+# lambda of 0.3, approximately a cube root
+lm((O3)^(1/3) ~ temp + humidity + ibh, ozone) %>% glance()
+#+END_SRC
+
+*** 4. 
+
+Use the pressure data to fit a model with pressure as the response and temperature as the predictor using transformations to obtain a good fit. 
+
+
