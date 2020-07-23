@@ -745,4 +745,52 @@ lm((O3)^(1/3) ~ temp + humidity + ibh, ozone) %>% glance()
 
 Use the pressure data to fit a model with pressure as the response and temperature as the predictor using transformations to obtain a good fit. 
 
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(pressure %<>% as_tibble())
+
+lookatit <- function(data) {
+    list(skimr::skim(data), ggpairs(data))
+}
+
+lookatit(pressure)[1]
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+lookatit(pressure)[2]
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Looks exponential 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(baseline <- lm(pressure ~ temperature, pressure))
+(logline <- lm(log(pressure) ~ temperature, pressure))
+baseline %>% glance()
+logline %>% glance()
+(pressure_bc <- bc_trans(baseline)) %>% glance()
+bc_trans(baseline, return_model = FALSE)
+(a^0.1 - 1) / 0.1 = y 
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+library(ggtext)
+
+pressure %>%
+    ggplot(aes(x = temperature, y = pressure)) +
+    geom_point() + 
+    geom_abline(intercept = baseline$coefficients[[1]],
+                slope = baseline$coefficients[[2]],
+                color = "blue", lty = 2) +
+    geom_line(aes(x = temperature, y = exp(logline$fitted.values)),
+              color = "green", lty = 2) +
+    geom_line(aes(x = temperature, y = ((pressure_bc$fitted.values * 0.1) + 1)^(1 / 0.1)),
+              color = "purple", lty = 2) +
+    ggtitle("Comparison of Transformations",
+            subtitle = "blue = y ~ x; green = log y ~ x; purple = (y^0.1 - 1) / 0.1")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
 
