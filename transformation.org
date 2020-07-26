@@ -786,11 +786,88 @@ pressure %>%
     geom_line(aes(x = temperature, y = exp(logline$fitted.values)),
               color = "green", lty = 2) +
     geom_line(aes(x = temperature, y = ((pressure_bc$fitted.values * 0.1) + 1)^(1 / 0.1)),
-              color = "purple", lty = 2) +
-    ggtitle("Comparison of Transformations",
-            subtitle = "blue = y ~ x; green = log y ~ x; purple = (y^0.1 - 1) / 0.1")
+              color = "purple", lty = 2) -> base_plot
+
+## base_plot +
+##     labs(
+##         title = "**Fisher's *Iris* dataset**  
+##     <span style='font-size:11pt'>Sepal width vs. sepal length for 
+##     <span style='color:#0072B2;'>setosa</span>, 
+##     <span style='color:#D55E00;'>versicolor</span>, and
+##     <span style='color:#009E73;'>virginica</span>
+##     </span>"## ,
+##     ## x = "Sepal length (cm)", y = "Sepal width (cm)"
+##     ) +
+##     theme(
+##         plot.title = element_markdown(lineheight = 1.1),
+##         legend.text = element_markdown(size = 11)
+##     )## + 
+##     ## ggtitle("Comparison of Transformations",
+##     ##         subtitle = "blue = y ~ x; green = log y ~ x; purple = (y^0.1 - 1) / 0.1") +
+## ## labs(title = "Comparison of Transformations\\n<span style='color:#0072B2;'>Test<\\span>")
+
+add_title_color <- function(plot, ...) {
+    plot +
+        theme(plot.title = ggtext::element_markdown(...))
+}
+
+colored <- function(text, color) {
+    base_colors <- data.frame("color" = colors(),
+                          "rgb" = rgb(t(col2rgb(colors())),
+                                      maxColorValue = 255))
+
+    if (color %in% base_colors$color) {
+        color <- base_colors[which(base_colors$color == color), 2]
+    }
+    
+    glue::glue("<span style='color:{color};'>{text}</span>")
+}
+
+colored("Hi", "blue")
+
+base_colors[which(base_colors$color == "blue"), 2]
+
+base_plot +
+    labs(title = paste0("Pressure ~ Temperature Fits"),
+         subtitle = glue::glue(colored("Linear Fit", "blue"), " | ",
+                                  colored("Log Fit", "green"), " | ",
+                                  colored("Box-Cox Fit", "purple"))) +
+    theme(plot.title = ggtext::element_markdown(),
+          plot.subtitle = ggtext::element_markdown())
 #+END_SRC
 
 #+RESULTS:
 [[file:plot.svg]]
 
+
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+
+ggplot(iris, aes(Sepal.Length, Sepal.Width, color = Species)) +
+  geom_point(size = 3) +
+  scale_color_manual(
+    name = NULL,
+    values = c(setosa = "#0072B2", virginica = "#009E73", versicolor = "#D55E00"),
+    labels = c(
+      setosa = "<i style='color:#0072B2'>I. setosa</i>",
+      virginica = "<i style='color:#009E73'>I. virginica</i>",
+      versicolor = "<i style='color:#D55E00'>I. versicolor</i>")
+  ) +
+  labs(
+    title = "**Fisher's *Iris* dataset**  
+    <span style='font-size:11pt'>Sepal width vs. sepal length for 
+    <span style='color:#0072B2;'>setosa</span>, 
+    <span style='color:#D55E00;'>versicolor</span>, and
+    <span style='color:#009E73;'>virginica</span>
+    </span>",
+    x = "Sepal length (cm)", y = "Sepal width (cm)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_markdown(lineheight = 1.1),
+    legend.text = element_markdown(size = 11)
+  )
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
