@@ -350,6 +350,9 @@ plot_ly(z = outp, y = pop15r, x = ddpir,
                zaxis = list(title = "Savings Rate")))
 #+END_SRC
 
+#+RESULTS:
+[[file:plot.svg]]
+
 ** Splines 
 
 Polynomials have the advantage of smoothness, but each data point affects the fit globally. This is because the power functions used for the polynomials take nonzero values across the whole range of the predictor. In contrast, broken stick regression localizes the influence of each data point to its particular segemtn, but we do not have the same smoothness of the polynomials. We can combine the beneficial aspects of both of these methods - smoothness and local influence - by using B-spline basis functions. 
@@ -899,7 +902,7 @@ list("Linear_Model" = lmod,
                    geom_abline(intercept = 0,
                                slope = 1,
                                lty = 2, color = "blue") +
-                   ggtitle(.y) +
+                   ggtitle(str_replace_all(.y, "_", " ")) +
                    xlab("Volume") + ylab("Fitted")}) -> plot_list_mods
 
 plot_list_mods$Linear_Model / plot_list_mods$Log_Model / plot_list_mods$Box_Cox_Model
@@ -909,4 +912,69 @@ plot_list_mods$Linear_Model / plot_list_mods$Log_Model / plot_list_mods$Box_Cox_
 [[file:plot.svg]]
 
 
+*** 6. 
 
+Use the odor data for this question.
+
+**** Pre. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+odor %<>% as_tibble()
+
+odor %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+odor %>%
+    ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** a. 
+
+Fit a second order response surface for the odor response using the other three variables as predictors. How many parameters does this model use and how many degrees of freedom are left?
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod <- lm(odor ~ polym(temp, gas, pack, degree = 2), odor))
+lmod %>% tidy()
+lmod %>% summary()
+#+END_SRC
+
+This model fits a total of 10 parameters:
+- each predictor
+- each squared predictor
+- each interaction (110, 011, 101)
+- the intercept.
+
+There are 6 - 1 = 5 degrees of freedom. These are (temp, gas, pack, temp sq, gas sq, and pack sq) - 1. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+# rows and columns describe a grid, and the cell value describes surface height
+savings
+odor
+
+odor %>% summary()
+
+temp_r <- seq(-1, 1, len = 50)
+gas_r <- seq(-1, 1, len = 50)
+pack_r <- seq(-1, 1, len = 50)
+
+pgrid <- expand.grid(temp = temp_r,
+                     gas = gas_r,
+                     pack = pack_r)
+
+pv <- predict(lmod, pgrid)
+(outp <- matrix(pv, 50, 50))
+
+plot_ly(z = outp, y = temp_r, x = gas_r, 
+        type = "surface",
+        contours = list(x = list(show = TRUE),
+                        y = list(show = TRUE))) %>%
+    layout(title = "Perspective Plot of Quadratic Surface",
+           scene = list(
+               yaxis = list(title = "Temp"),
+               xaxis = list(title = "Gas"),
+               zaxis = list(title = "Odor")))
+#+END_SRC
