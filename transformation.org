@@ -816,3 +816,17 @@ base_plot +
 #+RESULTS:
 [[file:plot.svg]]
 
+*** 5 
+
+Use transformations to find a good model for volume in terms of girth and height using the trees data
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(trees %<>% as_tibble())
+
+trees %>% skimr::skim() -> flubber
+
+flubber %>% summary()
+
+flubber %>% as_tibble() %>%
+    glimpse()
+#+END_SRC
