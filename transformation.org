@@ -118,6 +118,29 @@ bc_trans <- function(lmod, return_model = TRUE) {
     }
 }
 
+bc_trans <- function(lmod, return_model = TRUE) {
+    # get the boxcox diagnostic
+    bc <- boxcox(lmod, plotit = FALSE)
+    # get results into a tibble
+    bc_out <- tibble("lambda" = bc$x,
+                     "log_likelihood" = bc$y) %>%
+        arrange(desc(log_likelihood)) %>%
+        # grab MLE for lambda
+        pluck(1, 1)
+
+    if (return_model) {
+        modform <- formula(lmod)
+        resp <- modform[[2]]
+        preds <- modform[[3]]
+        
+        new_formula <- as.formula(substitute(((resp^(bc_out) - 1) / bc_out) ~ preds))
+        lm(new_formula, lmod$model)
+    } else {
+        bc_out
+    }
+}
+
+
 lmod %>% glance()
 bc_trans(lmod) %>% glance()
 #+END_SRC
@@ -771,7 +794,15 @@ baseline %>% glance()
 logline %>% glance()
 (pressure_bc <- bc_trans(baseline)) %>% glance()
 bc_trans(baseline, return_model = FALSE)
-(a^0.1 - 1) / 0.1 = y 
+(a^0.1 - 1) / 0.1 = y
+
+bc_trans(lmod, return_model = FALSE)
+
+zoop <- as.formula(y ~ x + z)
+zoop[[3]]
+
+as.formula(substitute(log(zoop[[2]]) ~ zoop[[3]])) 
+
 #+END_SRC
 
 #+BEGIN_SRC R :file plot.svg :results graphics file
@@ -830,3 +861,52 @@ flubber %>% summary()
 flubber %>% as_tibble() %>%
     glimpse()
 #+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+trees %>%
+    ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+# regular model 
+lmod <- lm(Volume ~ Girth + Height, trees)
+
+# log model
+loglm <- lm(log(Volume) ~ Girth + Height, trees)
+
+# box cox model
+bc_trees <- bc_trans(lmod)
+
+# compare fits
+list(lmod, loglm, bc_trees) %>%
+    map(glance)
+#+END_SRC
+
+They all fit really well. Lets look at the actual vs. fitted for each 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+list("Linear_Model" = lmod,
+     "Log_Model" = loglm,
+     "Box_Cox_Model" = bc_trees) %>%
+    imap(., ~ {.x %>%
+                   augment() %>%
+                   ggplot(aes(x = .[[1]], y = .fitted)) +
+                   geom_point() +
+                   geom_abline(intercept = 0,
+                               slope = 1,
+                               lty = 2, color = "blue") +
+                   ggtitle(.y) +
+                   xlab("Volume") + ylab("Fitted")}) -> plot_list_mods
+
+plot_list_mods$Linear_Model / plot_list_mods$Log_Model / plot_list_mods$Box_Cox_Model
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+
+
