@@ -1034,3 +1034,103 @@ print(plot(getViz(gamod), allterms = T), pages = 1)
 #+RESULTS:
 [[file:plot.svg]]
 
+The predictors all look essentially linear. 
+
+**** b. 
+
+Use the Box-Cox method to determine an optimal transformation of the response. Would it be reasonable to leave the response untransformed?
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+gamod %>% summary()
+
+bclm <- bc_trans(lm(taste ~ Acetic + H2S + Lactic, cheddar))
+
+bclm %>% summary()
+
+lm(taste ~ Acetic + H2S + Lactic, cheddar) %>% summary()
+#+END_SRC
+
+Our box-cox transformed linear model fit the data better than our additive model, but did a worse job than just fitting the model on the untransformed response variable. In this case, it would be reasonable to not transform the model.
+
+**** c.
+
+Use the optimal transformation of the response and refit the additive model. Does this make any difference to the transformations suggested for the predictors?
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+bc_trans(lm(taste ~ Acetic + H2S + Lactic, cheddar), return_model = FALSE)
+
+(ngamod <- gam(((taste^0.7 - 1) / 0.7) ~ s(Acetic) + s(H2S) + s(Lactic), data = cheddar))
+
+ngamod %>% summary()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+print(plot(getViz(ngamod), allterms = T), pages = 1)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Our R^2 value went even lower. Our gam slightly changed the slope of our Acetic variable. 
+
+
+*** 8. 
+
+Use the cars data with distance as the response and speed as the predictor. 
+
+**** Pre. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+cars %<>% as_tibble()
+
+cars %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+cars %>%
+    ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** a. 
+
+Plot distance against speed 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+ggplot(cars, aes(x = speed, y = dist)) +
+    geom_point()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** b, c, d. 
+
+Show a linear fit, a quadratic fit, and a sqrt transformed response fit to the data on the plot
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+ggplot(cars, aes(x = speed, y = dist)) +
+    geom_point() +
+    geom_line(aes(x = speed, y = extract2(lm(dist ~ speed, cars), "fitted.values")),
+              color = "orange", lty = 2) +
+        geom_line(aes(x = speed, y = extract2(lm(dist ~ speed + I(speed^2), cars), "fitted.values")),
+                  color = "forestgreen", lty = 2) +
+    geom_line(aes(x = speed, y = (extract2(lm(sqrt(dist) ~ speed, cars), "fitted.values"))^2),
+              color = "mediumpurple", lty = 2) +
+    geom_smooth(se = FALSE,
+                method = "loess",
+                lty = 2,
+                size = 0.6) +
+    labs(title = paste0("Comparison of Fits"),
+         subtitle = glue::glue(colored("Linear Fit", "orange"), " | ",
+                               colored("Log Fit", "forestgreen"), " | ",
+                               colored("Box-Cox Fit", "mediumpurple"), " | ",
+                               colored("Loess", "blue"))) +
+    theme(plot.subtitle = ggtext::element_markdown())
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+

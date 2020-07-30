@@ -1,0 +1,33 @@
+* Model Selection
+:PROPERTIES:
+:header-args: :session R-session :results output value :colnames yes
+:END:
+
+#+NAME: round-tbl
+#+BEGIN_SRC emacs-lisp :var tbl="" fmt="%.1f"
+(mapcar (lambda (row)
+          (mapcar (lambda (cell)
+                    (if (numberp cell)
+                        (format fmt cell)
+                      cell))
+                  row))
+        tbl)
+#+end_src
+
+#+RESULTS: round-tbl
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(tidyverse)
+library(faraway)
+library(broom)
+library(magrittr)
+#+END_SRC
+
+
+In this chapter, we consider the the problem of selecting the "best" subset of predictors. 
+
+** Hierarchical Models 
+
+Some models have a natural hierarchy. When selecting variables, it is important to respect the hierarchy. 
+
+
