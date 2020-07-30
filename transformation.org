@@ -950,9 +950,10 @@ This model fits a total of 10 parameters:
 
 There are 6 - 1 = 5 degrees of freedom. These are (temp, gas, pack, temp sq, gas sq, and pack sq) - 1. 
 
+Here is a plot. It doesn't quite work, as we are looking at a model with more than 2 extra dimensions, but it looks nice. 
+
 #+BEGIN_SRC R :file plot.svg :results graphics file
 # rows and columns describe a grid, and the cell value describes surface height
-savings
 odor
 
 odor %>% summary()
@@ -978,3 +979,58 @@ plot_ly(z = outp, y = temp_r, x = gas_r,
                xaxis = list(title = "Gas"),
                zaxis = list(title = "Odor")))
 #+END_SRC
+
+**** b. 
+
+Fit a model for the same response but now excluding any interaction terms, but including linear and quadratic terms in all three predictors. Compare this model with the previous one. Is this simplification justified? 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod
+
+(lmod2 <- lm(odor ~ temp + gas + pack + I(temp^2) + I(gas^2) + I(pack^2), odor))
+
+lmod %>% summary()
+lmod2 %>% summary()
+#+END_SRC
+
+Our new model does better on both the R^2 and adjusted R^2 goodness of fit tests. In exchange we have more degrees of freedom. In this case, our p-value and F-statistic indicate that our data provides sufficient evidence to conclude that our second regression model fits the data better than the model with no independent variables and our first model. 
+
+**** c. 
+
+Use the previous model to determine the values of the predictors which result in the minimum predicted odor
+
+In this case, we should look at the linear terms, as the quadratic terms would require a backtransformation. So the greatest reduction in odor is the pack variable, followed by gas, then temp. 
+
+*** 7. 
+
+Use the cheddar data for this question 
+
+**** Pre 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+cheddar %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+cheddar %>% ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+**** a. 
+
+Fit an additive model for a response of taste with the other three variables as predictors. Is any transformation of the predictors suggested? 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(gamod <- gam(taste ~ s(Acetic) + s(H2S) + s(Lactic), data = cheddar))
+gamod %>% summary()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+print(plot(getViz(gamod), allterms = T), pages = 1)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
