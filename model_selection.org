@@ -30,4 +30,54 @@ In this chapter, we consider the the problem of selecting the "best" subset of p
 
 Some models have a natural hierarchy. When selecting variables, it is important to respect the hierarchy. 
 
+For example, if we have a polynomial regression, we should not drop the $x$ term and keep the $x^2$ term. 
+
+For models with interactions, we should not consider removing the $x_1 x_2$ interaction term without simultaneously considering the removal of the $x_1^2$ and $x_2^2$ terms. 
+
+** Testing Based Procedures 
+
+Backward elimination is the simplest of all variable selection procedures. We start with all the predictors, and then remove the predictor with the highest p-value greater than $\alpha_{crit}$. Then refit the model, and remove the remaining least significant procedure. Sooner or later, all "nonsignificant" predictors will be removed and the selection process will complete. 
+
+The $\alpha_{crit}$ is sometimes called the p to remove and does not have to be 5%. If prediction performance is the goal, then a 15 to 20% cutoff may work best, although methods designed for optimal prediction should be preferred. 
+
+Forward selection is the same thing, but backwards. We start with no variables, and for all the variables not in the model we check their p-values if we add them to the model. 
+
+Stepwise regression is the combination of both forward and backward elimination. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+data(state)
+
+state.x77 %<>%
+    as_tibble() %>%
+    janitor::clean_names()
+
+## example of backward elimination
+lmod <- lm(life_exp ~ ., state.x77)
+
+lmod %>% summary()
+
+## first remove area, then illiteracy, then income, the population
+lmod %>% step(direction = "backward") -> lmod_b
+lmod %>% step(direction = "forward") -> lmod_f
+lmod %>% step(direction = "both") -> lmod_fb
+
+lmod_b %>% summary()
+lmod_f %>% summary()
+lmod_fb %>% summary()
+#+END_SRC
+
+Testing-based procedures are relatively cheap computationally and easy to understand, but do have some drawbacks.
+
+1. Because of the one at a time nature of adding / dropping variables, it is possible to miss the "optimal" model.
+
+2. The p-values should not be treated too literally. There is so much multiple testing occurring that the validity is dubious. The removal of less significant predictors tends to increase the significance of the remaining predictors. This leads one to overstate the importance of the remaining predictors.
+
+3. The procedures are not directly linked to final objectives of prediction or explanation, so they may not really help solve the problem of interest. Variable selection tends to amplify the statistical significance of the variables that stay in the model. Variables that are dropped can still be correlated with the response; they could be dropped simply because they provide no additional explanatory effect beyond those variables already included in the model 
+
+4. Stepwise variable selection tends to pick models that are smaller than desirable for prediction purposes. 
+
+Except in simple cases where only a few models are compared or in highly structured hierarchical models, testing-based variable selection should not be used. 
+
+** Criterion-Based Procedures 
+
 
