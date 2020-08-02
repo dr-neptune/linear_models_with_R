@@ -80,4 +80,4 @@ Except in simple cases where only a few models are compared or in highly structu
 
 ** Criterion-Based Procedures 
 
-
+Oh no, I've spent the majority of my day trying to get guix to work. Ah well, here is an interim commit to avoid breaking the chain 
