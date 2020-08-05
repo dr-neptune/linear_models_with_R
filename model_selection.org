@@ -80,4 +80,25 @@ Except in simple cases where only a few models are compared or in highly structu
 
 ** Criterion-Based Procedures 
 
-Oh no, I've spent the majority of my day trying to get guix to work. Ah well, here is an interim commit to avoid breaking the chain 
+We choose the model that minimizes the Akaike Information Criterion: $AIC = -2 L(\hat{\theta}) + 2p$
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+library(leaps)
+
+(b <- regsubsets(life_exp ~ ., state.x77))
+rs <- summary(b)
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+## plot AIC 
+aic_out <- 50 * log(rs$rss / 50) + (2:8) * 2
+
+ggplot(enframe(aic_out), aes(x = name, y = value)) +
+    geom_point() +
+    xlab("Number of Predictors") +
+    ylab("Akaike Information Criterion")
+#+END_SRC
+
+We see that the AIC is minimized by a choice of 4 predictors -- population, murder, hs_grad, and frost. 
+
+Another commonly used criterion is the adjusted $R^2$, written $R_a^2$. Recall that $R^2 = 1 - \frac{RSS}{TSS}$. Our adjusted criterion is $R_a^2 = 1 - \frac{\frac{RSS}{n - p}}{\frac{TSS}{n - 1}} = 1 - \frac{n - 1}{n - p}(1 - R^2) = 1 - \frac{\hat{\sigma_{model}^2}}{\hat{\sigma_{null}^2}}$ 
