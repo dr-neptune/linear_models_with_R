@@ -240,3 +240,192 @@ scale(state.x77) %>%
 [[file:plot.svg]]
 
 
+In the figure above, we see that population and area are skewed. We can try transforming them: 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+b <- regsubsets(life_exp ~ log(population) + income + illiteracy + murder + hs_grad + frost + log(area), state.x77)
+rs <- summary(b)
+rs$which[which.max(rs$adjr), ]
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+scale(state.x77) %>%
+    as_tibble() %>%
+    mutate("state_name" = state.abb,
+           population = log(population),
+           area = log(area)) %>%
+    pivot_longer(-state_name,
+                 names_to = "predictor",
+                 values_to = "std_ct") %>>%
+    (~ inter_df) %>% 
+    ## assign("inter_df", value = ., pos = 1) %>% 
+    ggplot(aes(x = predictor, y = std_ct, group = predictor)) +
+    geom_jitter(position = position_jitter(0.2), aes(color = predictor)) +
+    geom_point(data = subset(inter_df, std_ct > 3), color = "black", size = 10, shape = 1) +
+    scale_color_viridis_d()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+** Summary 
+
+Hypothesis testing based methods use a restricted search through the space of potential models and use a dubious method for choosing between models when repeated many times. Criterion-based methods typically involve a wider search and compare models in a more preferable manner. 
+
+If several models are suggested which fit as well as each other, consider:
+
+1. Do the models have similar qualitative consequences?
+2. Do they make similar predictions?
+3. What is the cost of measuring the predictors?
+4. Which has the best diagnostics? 
+
+** Exercises 
+
+** 1. Use the prostate data with lpsa as the response and the other variables as predictors. Implement the following variable selection methods to determine the best model: 
+
+ #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+prostate %<>% as_tibble()
+
+prostate %>% skimr::skim()
+ #+END_SRC
+
+ #+BEGIN_SRC R :file plot.svg :results graphics file
+prostate %>%
+    ggpairs()
+#+END_SRC
+
+ #+RESULTS:
+ [[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+all_criterion <- function(data, formula, print = FALSE) {
+    lmod <- lm(formula, data)
+    
+    lmod %>% step(direction = "backward") -> lmod_b
+    lmod %>% step(direction = "forward") -> lmod_f
+    lmod %>% step(direction = "both") -> lmod_s
+    
+    (b <- leaps::regsubsets(formula, data))
+    rs <- summary(b)
+    aic_out <- nrow(data) * log(rs$rss / nrow(data)) + (2:length(b$xnames)) * 2
+
+    list("Akaike Information Criterion" = aic_out,
+         "Adjusted R^2" = rs$adjr2,
+         "Mallow's $C_p$" = rs$cp) %>%
+        imap(., ~ {
+            .x %>%
+                enframe() %>%
+                ggplot(aes(x = name, y = value)) +
+                geom_point() +
+                geom_line(color = "green", alpha = 0.2) +
+                xlab("Number of Predictors") +
+                ylab(latex2exp::TeX(str_to_title(.y))) +
+                ggtitle(latex2exp::TeX(.y))
+        }) -> p_out
+
+    p_out[[3]] %<>% `+`(geom_abline(slope = 1, intercept = 0, color = "blue", alpha = 0.3, lty = 2))
+    
+    if (print) reduce(p_out, `/`)
+    else p_out
+}
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_stepwise <- function(data, formula, print = TRUE) {
+    lmod <- lm(formula, data)
+    c("backward", "forward", "both") %>>% (~ names_out) %>%  map(., ~ lmod %>% step(direction = .x)) %>% set_names(names_out) -> mods
+    mods %>%
+        map(glance) %>%
+        bind_rows(.id = "model") %>%
+        pivot_longer(-model, names_to = "metric") %>>%
+        (~ metrics_out) %>% 
+        ggplot() +
+        geom_point(aes(x = model, y = value, color = model),
+                   alpha = 0.75) +
+        facet_wrap(~ metric, scales = "free") +
+        theme(axis.text.x = element_text(angle = 90)) -> plot
+
+    if (print) plot
+    else metrics_out
+}
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+*** a. Backward Elimination 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_stepwise(prostate, "lpsa ~ .", print = TRUE)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+*** AIC, Adjusted R^2, Mallow's Cp 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_criterion(prostate, as.formula("lpsa ~ .")) -> p_out
+p_out %>% reduce(`/`)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+** 2. Use the teengamb dataset with gamble as the response and the other variables as predictors, repeat the work of the first question 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+teengamb %<>% as_tibble()
+teengamb %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+teengamb %>%
+    ggpairs()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_stepwise(teengamb, "gamble ~ .")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_criterion(teengamb, as.formula("gamble ~ .")) -> p_out
+p_out %>% reduce(`/`)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+** 3. Using the divusa dataset with divorce as the response and the other variables as predictors, repeat the work of the first question 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+divusa %<>% as_tibble()
+
+divusa %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+divusa %>%
+    ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_stepwise(divusa, "divorce ~ .")
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_criterion(divusa, as.formula(divorce ~ .)) -> p_out
+
+p_out %>% reduce(`/`)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
