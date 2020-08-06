@@ -216,12 +216,27 @@ list(p1, p2) %>% flatten() %>% reduce(`+`)
 We can see that removing Alaska made all the responses much smoother across the predictor counts. 
 
 #+BEGIN_SRC R :file plot.svg :results graphics file
-stripchart(data.frame(scale(state.x77)),
-           method = "jitter",
-           las = 2,
-           vertical = TRUE)
+## stripchart(data.frame(scale(state.x77)),
+##            method = "jitter",
+##            las = 2,
+##            vertical = TRUE)
+library(pipeR)
+
+scale(state.x77) %>%
+    as_tibble() %>%
+    mutate("state_name" = state.abb) %>%
+    pivot_longer(-state_name,
+                 names_to = "predictor",
+                 values_to = "std_ct") %>>%
+    (~ inter_df) %>% 
+    ## assign("inter_df", value = ., pos = 1) %>% 
+    ggplot(aes(x = predictor, y = std_ct, group = predictor)) +
+    geom_jitter(position = position_jitter(0.2), aes(color = predictor)) +
+    geom_point(data = subset(inter_df, std_ct > 3), color = "black", size = 10, shape = 1) +
+    scale_color_viridis_d()
 #+END_SRC
 
 #+RESULTS:
 [[file:plot.svg]]
+
 
