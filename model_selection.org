@@ -80,13 +80,25 @@ Except in simple cases where only a few models are compared or in highly structu
 
 ** Criterion-Based Procedures 
 
-We choose the model that minimizes the Akaike Information Criterion: $AIC = -2 L(\hat{\theta}) + 2p$
+We choose the model that minimizes the Akaike Information Criterion: $AIC = -2 L(\hat{\theta}) + 2p$. For linear regression models, the -2 * max log likelihood = $n \log(\frac{RSS}{n}) + c$. 
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 library(leaps)
 
 (b <- regsubsets(life_exp ~ ., state.x77))
 rs <- summary(b)
+
+nrow(lmod$model)
+
+aic_out <- function(lmod) {
+    n <- nrow(lmod$model)
+    rss <- sum(lmod$residuals^2)
+    npred <- 2:length(lmod$coefficients)
+
+    n * log(rss / n) + max(npred) * 2
+}
+
+aic_out(lmod)
 #+END_SRC
 
 #+BEGIN_SRC R :file plot.svg :results graphics file
@@ -99,6 +111,117 @@ ggplot(enframe(aic_out), aes(x = name, y = value)) +
     ylab("Akaike Information Criterion")
 #+END_SRC
 
+#+RESULTS:
+[[file:plot.svg]]
+
 We see that the AIC is minimized by a choice of 4 predictors -- population, murder, hs_grad, and frost. 
 
-Another commonly used criterion is the adjusted $R^2$, written $R_a^2$. Recall that $R^2 = 1 - \frac{RSS}{TSS}$. Our adjusted criterion is $R_a^2 = 1 - \frac{\frac{RSS}{n - p}}{\frac{TSS}{n - 1}} = 1 - \frac{n - 1}{n - p}(1 - R^2) = 1 - \frac{\hat{\sigma_{model}^2}}{\hat{\sigma_{null}^2}}$ 
+Another commonly used criterion is the adjusted $R^2$, written $R_a^2$. Recall that $R^2 = 1 - \frac{RSS}{TSS}$. Our adjusted criterion is $R_a^2 = 1 - \frac{\frac{RSS}{n - p}}{\frac{TSS}{n - 1}} = 1 - \frac{n - 1}{n - p}(1 - R^2) = 1 - \frac{\hat{\sigma_{model}^2}}{\hat{\sigma_{null}^2}}$
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+enframe(rs$adjr2) %>%
+    ggplot(aes(x = name, y = value)) +
+    geom_point() +
+    xlab("Number of Predictors") +
+    ylab("Adjusted R^2")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Our final criterion is Mallow's C_p statistic. 
+
+A good model should predict well, so the average mean squared error of prediction should be a good criterion. This can be estimated by the C_p statistic:
+
+$C_p = \frac{RSS_p}{\hat{\sigma^2}} + 2p - n$
+
+where $\hat{\sigma^2}$ is the model with all predictors and $RSS_p$ indicates the RSS from a model with p parameters. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+enframe(rs$cp) %>%
+    ggplot(aes(x = name, y = value)) +
+    geom_point() +
+    geom_line(color = "green", alpha = 0.2) +
+    geom_abline(slope = 1, intercept = 0, color = "blue", lty = 2, alpha = 0.5) +
+    xlab("Number of Predictors") +
+    ylab(latex2exp::TeX("C_p")) +
+    ggtitle(latex2exp::TeX("Mallow's $C_p$"))
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_criterion <- function(data, formula, print = FALSE) {
+    (b <- leaps::regsubsets(formula, data))
+    rs <- summary(b)
+    aic_out <- nrow(data) * log(rs$rss / nrow(data)) + (2:length(b$xnames)) * 2
+
+    list("Akaike Information Criterion" = aic_out,
+         "Adjusted R^2" = rs$adjr2,
+         "Mallow's $C_p$" = rs$cp) %>%
+        imap(., ~ {
+            .x %>%
+                enframe() %>%
+                ggplot(aes(x = name, y = value)) +
+                geom_point() +
+                geom_line(color = "green", alpha = 0.2) +
+                xlab("Number of Predictors") +
+                ylab(latex2exp::TeX(str_to_title(.y))) +
+                ggtitle(latex2exp::TeX(.y))
+        }) -> p_out
+
+    p_out[[3]] %<>% `+`(geom_abline(slope = 1, intercept = 0, color = "blue", alpha = 0.3, lty = 2))
+    
+    if (print) reduce(p_out, `/`)
+    else p_out
+}
+
+all_criterion(state.x77, as.formula("life_exp ~ .")) -> p_out
+
+library(patchwork)
+
+reduce(p_out, `/`)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+
+Variable selection methods are sensitive to outliers and influential points. 
+
+Let's check for high leverage points:
+ 
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod %>%
+    augment() %>%
+    pull(.hat) %>% 
+    `names<-`(state.abb) %>%
+    sort() %>%
+    rev()
+#+END_SRC
+
+We can see that Alaska has high leverage. Let's try excluding it.
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_criterion(state.x77, as.formula(life_exp ~ .)) -> p1
+all_criterion(state.x77[-2, ], as.formula(life_exp ~ .)) -> p2
+
+list(p1, p2) %>% flatten() %>% reduce(`+`)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+We can see that removing Alaska made all the responses much smoother across the predictor counts. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+stripchart(data.frame(scale(state.x77)),
+           method = "jitter",
+           las = 2,
+           vertical = TRUE)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
