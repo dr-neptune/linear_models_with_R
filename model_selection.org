@@ -429,3 +429,50 @@ p_out %>% reduce(`/`)
 #+RESULTS:
 [[file:plot.svg]]
 
+** 4. Using the trees data, fit a model with log(Volume) as the response and a second order polynomial (including the interaction term) in Girth and Height. Determine whether the model may be reasonably simplified. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+trees %<>% as_tibble()
+
+(lmod <- lm(log(Volume) ~ Girth + Height + (Girth * Height) + I(Girth^2) + I(Height^2), trees))
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_criterion(trees, as.formula(log(Volume) ~ Girth + Height + (Girth * Height) + I(Girth^2) + I(Height^2))) %>% reduce(`/`)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+leaps::regsubsets(log(Volume) ~ Girth + Height + (Girth * Height) + I(Girth^2) + I(Height^2), trees) %>% summary() -> rs
+rs$which
+#+END_SRC
+
+#+RESULTS:
+| (Intercept) | Girth | Height | I(Girth^2) | I(Height^2) | Girth:Height |
+|-------------+-------+--------+------------+-------------+--------------|
+| TRUE        | FALSE | FALSE  | FALSE      | FALSE       | TRUE         |
+| TRUE        | TRUE  | TRUE   | FALSE      | FALSE       | FALSE        |
+| TRUE        | TRUE  | TRUE   | TRUE       | FALSE       | FALSE        |
+| TRUE        | TRUE  | TRUE   | TRUE       | TRUE        | FALSE        |
+| TRUE        | TRUE  | TRUE   | TRUE       | TRUE        | TRUE         |
+
+Our best model for all our criterions is the 3 predictor model. This corresponds to the model with the formula log(Volume) ~ Girth + Height + I(Girth^2).
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+lmod %>% glance()
+lmod %>% tidy()
+lm(log(Volume) ~ Girth + Height + I(Girth^2), trees) %>% glance()
+#+END_SRC
+
+In order to reasonably simplify the model we must make sure that the model keeps all the lower level terms for our higher order terms. In this case, we should be fine since we have both Girth and Girth^2. 
+
+** 5. Fit a linear model to the stackloss data with stack.loss as the response and the other variables as predictors. Simplify the model if possible. 
+
+Check the model for outliers and influential points. 
+
+Now return to the full model, determine whether there are any outliers or influential points, eliminate them, and then repeat the variable selection procedures.
+
+
+
