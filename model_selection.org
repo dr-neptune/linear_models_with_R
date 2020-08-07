@@ -152,8 +152,12 @@ enframe(rs$cp) %>%
 [[file:plot.svg]]
 
 #+BEGIN_SRC R :file plot.svg :results graphics file
-all_criterion <- function(data, formula, print = FALSE) {
-    (b <- leaps::regsubsets(formula, data))
+all_criterion <- function(data, formula, print = FALSE, leaps_in = "") {
+    if (leaps_in == "") {
+        (b <- leaps::regsubsets(formula, data))
+    } else {
+        b <- leaps_in
+    }
     rs <- summary(b)
     aic_out <- nrow(data) * log(rs$rss / nrow(data)) + (2:length(b$xnames)) * 2
 
@@ -470,9 +474,154 @@ In order to reasonably simplify the model we must make sure that the model keeps
 
 ** 5. Fit a linear model to the stackloss data with stack.loss as the response and the other variables as predictors. Simplify the model if possible. 
 
+#+BEGIN_SRC R :file plot.svg :results graphics file
+stackloss %<>% as_tibble()
+stackloss %>% skimr::skim()
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+stackloss %>% ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+## fit the model
+(lmod <- lm(stackloss$stack.loss ~ ., stackloss))
+
+## simplify if possible
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+## lmod %>% all_criterion(stackloss, stackloss$stack.loss ~ .)
+regsubsets(stackloss$stack.loss ~ ., stackloss) %>>% (~ sl_leaps) %>% all_criterion(stackloss, stackloss$stack.loss, leaps_in = ., print = TRUE)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Our best model is the one with two predictors. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+summary(sl_leaps)
+#+END_SRC
+
+This is the model with air flow and water temp, but not acid concentration. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod2 <- lm(stackloss$stack.loss ~ Air.Flow + Water.Temp, stackloss))
+lmod2 %>% summary()
+
+lmod %>% summary()
+#+END_SRC
+
 Check the model for outliers and influential points. 
 
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+## outliers
+get_adj_outliers <- function(lmod,
+                      base_p_value = 0.05,
+                      correction_strength = NA,
+                      top_vals = 3) {
+    # get studentized resids
+    st_res <- rstudent(lmod)
+
+    # set correction strength
+    if (is.na(correction_strength)) {
+        correction_strength <- lmod %>%
+            augment() %>%
+            nrow()
+    } else {
+        correction_strength
+    }
+
+    # compute bonferroni
+    dof <- lmod %>%
+        glance() %>%
+        pull(df.residual)
+
+    base_p_value <- base_p_value
+
+    # compute conferroni
+    bf_val <- qt(p = base_p_value / correction_strength,
+                 df = dof)
+
+    # get top_n absolute value studentized residuals
+    top_n_vals <- st_res %>%
+        enframe() %>%
+        top_n(abs(value), n = top_vals) %>%
+        add_row(name = "Bonferroni Correction Threshold",
+                value = bf_val) %>%
+        rowwise() %>%
+        mutate(over_thresh = ifelse(abs(value) > abs(bf_val),
+                                    TRUE,
+                                    FALSE))
+
+    # get outlier values
+    top_n_vals %>%
+        pluck(1) %>%
+        head(-1) %>%
+        map_df(., ~ lmod %>%
+            augment() %>%
+            slice(as.integer(.x)) %>%
+            mutate(name = .x)) -> outlier_values
+
+    outlier_values %>%
+        left_join(top_n_vals, by = "name") %>%
+        select("Index" = name, over_thresh, value, everything())
+}
+
+## influential point plot
+inf_pt_plot <- function(lmod) {
+    lmod %>%
+        augment() %>%
+        pull(.cooksd) %>%
+        gghalfnorm::gghalfnorm()
+}
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+(lmod2 %>%
+ get_adj_outliers() -> ol_sl)
+
+## see what values are outliers
+stackloss %>%
+    slice(c(3, 4, 21))
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+lmod2 %>%
+    inf_pt_plot()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+We have 3 outliers. 
+
 Now return to the full model, determine whether there are any outliers or influential points, eliminate them, and then repeat the variable selection procedures.
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+lmod %>%
+    get_adj_outliers()
+
+lmod %>% inf_pt_plot()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+We get the same outliers as the reduced model.
+
+## not completed yet
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+stackloss %>% slice(-c(3, 4, 21)) -> ss_sl
+(lmod3 <- lm(ss_sl$stack.loss ~ ., ss_sl))
+#+END_SRC
+
+
 
 
 
