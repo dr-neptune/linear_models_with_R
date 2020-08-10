@@ -302,15 +302,12 @@ prostate %>%
  [[file:plot.svg]]
 
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
-all_criterion <- function(data, formula, print = FALSE) {
-    lmod <- lm(formula, data)
-    
-    lmod %>% step(direction = "backward") -> lmod_b
-    lmod %>% step(direction = "forward") -> lmod_f
-    lmod %>% step(direction = "both") -> lmod_s
-    
+all_criterion <- function(data, formula, print = FALSE, summary = FALSE) {
     (b <- leaps::regsubsets(formula, data))
     rs <- summary(b)
+
+    if (summary) return(rs)
+    
     aic_out <- nrow(data) * log(rs$rss / nrow(data)) + (2:length(b$xnames)) * 2
 
     list("Akaike Information Criterion" = aic_out,
@@ -614,14 +611,132 @@ lmod %>% inf_pt_plot()
 
 We get the same outliers as the reduced model.
 
-## not completed yet
-
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 stackloss %>% slice(-c(3, 4, 21)) -> ss_sl
-(lmod3 <- lm(ss_sl$stack.loss ~ ., ss_sl))
+ss_sl %<>% rename("sl" = stack.loss)
+(lmod3 <- lm(sl ~ ., ss_sl))
 #+END_SRC
 
+Now we must redo the model selection process.
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_criterion(ss_sl, sl ~ .) %>% reduce(`/`)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+all_criterion(ss_sl, sl ~ ., print = FALSE, summary = TRUE)
+#+END_SRC
+
+Our new best model is the 2 parameter model with Air flow and water temp. 
+
+** 6. Use the seatpos data with hipcenter as the response 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+seatpos %<>% as_tibble()
+
+seatpos %>% skimr::skim()
+
+seatpos %>% ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+*** a. Fit a model with all eight predictors. Comment on the effect of leg length on the response
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+(lmod <- lm(hipcenter ~ ., seatpos))
+
+lmod %>% summary()
+#+END_SRC
+
+Leg length has a large effect on the hipcenter for this data. That said, all of these values seem highly negatively correlated with each hip center. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+seatpos %>%
+    correlate() %>%
+    rplot()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+*** b. Compute a 95% confidence interval for the mean value of the predictors 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+lmod %>%
+    tidy(conf.int = .95) %>%
+    slice(2:nrow(.)) %>% 
+    ggplot(aes(x = term, y = estimate)) +
+    geom_point(color = "forestgreen") +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), alpha = 0.5, color = "mediumpurple")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+*** c. Use AIC to select a model.  
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+all_criterion(seatpos, hipcenter ~ .) %>% reduce(`/`)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+The AIC chooses the model with only 3 predictors. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+all_criterion(seatpos, hipcenter ~ ., print = FALSE, summary = TRUE) 
+#+END_SRC
+
+The new model only has Ht and Leg as predictors. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+(lmod2 <- lm(hipcenter ~ Ht + Leg, seatpos))
+lmod2 %>% summary()
+#+END_SRC
+
+Now interpret the effect of leg length and compute the prediction interval.
+
+In this case, Leg is still a large driver downwards of hipcenter. It is also the less significant variable of the two and has a lot more uncertainty around its point estimate. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+lmod2 %>%
+    tidy(conf.int = .95) %>%
+    slice(2:nrow(.)) %>% 
+    ggplot(aes(x = term, y = estimate)) +
+    geom_point(color = "forestgreen") +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), alpha = 0.5, color = "mediumpurple")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+Compare the conclusions from the two models. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+lmod %>% summary()
+lmod2 %>% summary()
+#+END_SRC
+
+Our second model performs a lot better on the adjusted R^2 since it has much fewer parameters, but is a worse fit overall than the first model. 
 
 
+** 7. Generate some simulated data 
+
+*** a. Fit regression splines with 12 evenly spaces knots using y ~ bs(x, 12). Display the fit on top of the data 
+
+
+*** b. Compute the AIC for the model 
+
+
+*** c. Compute the AIC for all models with a number of knots between 3 and 20 inclusive. Plot the AIC as a function of the number of parameters. Which model is best?
+
+
+*** d. plot the fit for your selected model on top of the data 
 
 
