@@ -803,4 +803,46 @@ gend %>%
 
 ** 8. Use the odor data with odor as a response 
 
+#+BEGIN_SRC R :file plot.svg :results graphics file
+(odor %<>% as_tibble())
+
+odor %>% list(skimr::skim(.), ggpairs(.))
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+*** a. Fit a second order response surface model which contains all quadratic and cross-product terms of the three predictors. Explicitly include all 9 terms in your model statement. You will need to protect these terms using the I() function. Show the regression summary 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+(lmod <- lm(odor ~ polym(temp, gas, pack, temp*gas, temp*pack, gas*pack, I(temp^2), I(gas^2), I(pack^2)), odor))
+
+lmod %>% summary()
+#+END_SRC
+
+*** b. Use the backward elimination method with a cutoff of 5% to select a smaller model. 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+## in order to set the cutoff in step, we must figure out how to get the right step size. We do this by setting the k parameter to the qchisq value that corresponds to the p value we are looking for. 
+step(lmod, direction = "backward", k = qchisq(.05, 1, lower.tail = FALSE))
+#+END_SRC
+    
+*** c. Use the step method to select a model using AIC. Using this selected model determine the optimal values of the predictors to minimize odor 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+## step already uses AIC by default. It also uses mixed forward/backward selection. 
+lmod_s <- step(lmod)
+
+## odor is minimized at temp = 1, gas = 0, pack = 1 from the data. The model shows all the different combinations together. 
+lmod_s %>%
+    augment() %>%
+    select(odor, .fitted, everything()) %>%
+    arrange(.fitted) %>%
+    slice(1)
+#+END_SRC
+
+*** d. Use the polym function to fit a second-order orthogonal polynomial regression model to the response using the 3 predictors. Confirm that the fit is identical to a 
+
+*** e. Apply the step procedure to the last model. What terms are considered for elimination? What model was selected? Compare the outcome with c
+
 
