@@ -832,6 +832,7 @@ step(lmod, direction = "backward", k = qchisq(.05, 1, lower.tail = FALSE))
 #+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
 ## step already uses AIC by default. It also uses mixed forward/backward selection. 
 lmod_s <- step(lmod)
+lmod_s %>% tidy()
 
 ## odor is minimized at temp = 1, gas = 0, pack = 1 from the data. The model shows all the different combinations together. 
 lmod_s %>%
@@ -841,8 +842,25 @@ lmod_s %>%
     slice(1)
 #+END_SRC
 
+Our model achieves a minimum of -30.7 for its estimate of odor
+
 *** d. Use the polym function to fit a second-order orthogonal polynomial regression model to the response using the 3 predictors. Confirm that the fit is identical to a 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+(lmodb <- lm(odor ~ polym(temp, gas, pack, degree = 2), odor))
+
+## confirm the fit is identical to a
+lmod %>%
+    augment() %>%
+    left_join(lmodb %>% augment())
+#+END_SRC
 
 *** e. Apply the step procedure to the last model. What terms are considered for elimination? What model was selected? Compare the outcome with c
 
+#+BEGIN_SRC R :file plot.svg :results graphics file
+lmodb %>% step() %>% tidy()
+lmodb %>% tidy()
+#+END_SRC
+
+This also kept every variable. No terms are considered for elimination. The same thing happened with the model in part c. 
 
