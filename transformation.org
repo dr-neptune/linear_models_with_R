@@ -421,6 +421,7 @@ knots <- c(0, 0, 0, 0,
 (bx <- splineDesign(knots, x))
 
 lmodb <- lm(y ~ bx -1)
+
 #+END_SRC
 
 #+BEGIN_SRC R :file plot.svg :results graphics file

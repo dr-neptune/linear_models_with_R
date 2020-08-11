@@ -725,18 +725,82 @@ lmod2 %>% summary()
 
 Our second model performs a lot better on the adjusted R^2 since it has much fewer parameters, but is a worse fit overall than the first model. 
 
-
 ** 7. Generate some simulated data 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+c_val <- .995
+gend <- tibble(x = rgamma(500, 3) * cos(pi/4),
+               y = x * c_val + (rgamma(500, 3)) * sqrt(1 - c_val^2))
+
+cor(gend$x, gend$y)
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+gend %>% ggpairs()
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
 
 *** a. Fit regression splines with 12 evenly spaces knots using y ~ bs(x, 12). Display the fit on top of the data 
 
 
+#+BEGIN_SRC R :file plot.svg :results graphics file
+library(splines)
+
+(lmodc <- lm(y ~ bs(x, 12), gend))
+
+gend %>%
+    ggplot(aes(x = x, y = y)) +
+    geom_point() +
+    geom_line(aes(x = x, y = lmodc$fitted.values), color = "blue")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
 *** b. Compute the AIC for the model 
 
+#+BEGIN_SRC R :file plot.svg :results graphics file
+AIC(lmodc)
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
 
 *** c. Compute the AIC for all models with a number of knots between 3 and 20 inclusive. Plot the AIC as a function of the number of parameters. Which model is best?
 
+#+BEGIN_SRC R :file plot.svg :results graphics file
+map(3:20, ~ lm(y ~ bs(x, .x), gend) %>% AIC()) %>%
+    set_names(paste0("basis ", 3:20)) %>%
+    enframe(name = "basis", value = "aic") %>%
+    unnest() %>%
+    ungroup() %>%
+    ggplot(aes(x = reorder(basis, aic), y = aic, group = 1)) +
+    geom_point() +
+    geom_line(color = "orange", alpha = 0.5) +
+    theme(axis.text.x = element_text(angle = 90)) +
+    xlab("Number of Knots") + ylab("Akaike Information Criterion") +
+    ggtitle("AIC by Knot Count")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
 
 *** d. plot the fit for your selected model on top of the data 
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+(lmodb <- lm(y ~ bs(x, 3), gend))
+
+gend %>%
+    ggplot(aes(x = x, y = y)) +
+    geom_point() +
+    geom_line(aes(x = x, y = lmodb$fitted.values), color = "blue")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+** 8. Use the odor data with odor as a response 
 
 
