@@ -19,6 +19,7 @@ library(tidyverse)
 library(faraway)
 library(broom)
 library(magrittr)
+library(pipeR)
 #+END_SRC
 
 In this chapter, we look at four methods that allow us to shrink the additional information provided by an abundance of predictors into a more useful form. 
@@ -30,7 +31,7 @@ Principal components analysis (PCA) is a popular method for finding low-dimensio
 #+BEGIN_SRC R :file plot.svg :results graphics file
 data(fat, package = "faraway")
 
-fat %<>% as_tibble()
+fat %<>% as_tibble() %>% select(9:18)
 
 par(mfrow = c(1, 3))
 plot(neck ~ knee, fat)
@@ -47,17 +48,75 @@ Suppose we center the matrix of predictors $X$ by subtracting the mean for each 
 
 1. Find the $u_1$ such that var $(u_1^T X)$ is maximized subject to $u_1^Tu_1 = 1$
 2. Find $u_2$ such that var $(u_2^T X)$ is maximized subject to $u_1^T u_2 = 0$ and $u_2^T u_2 = 1$
-3. Keep finding directions of greatest variation orthogonal to those directions we have already found 
+3. Keep finding directions of greatest variation orthogonal to those directions we have already found
 
 Let's write $z_i = u_i^T X$. The $z_i$ are known as the principal components. We can gather together the terms in the matrix form $Z = XU$ where $Z$ and $U$ have columns $z_i$ and $u_i$ respectively. $U$ is called the rotation matrix. We can think of $Z$ as a version of the data rotated to orthogonality. 
 
-#+BEGIN_SRC R :file plot.svg :results graphics file
+#+BEGIN_SRC R
 fat %>%
-    select(9:18) %>%
     prcomp() %>>%
     (~ prfat) %>>%
     ("Dimensions of Rotation Matrix U" ? dim(.$rot)) %>>%
     ("Dimensions of Principal Components" ? dim(.$x)) %>>%
     ("Summary:\n\n" ? summary(.))
+#+END_SRC 
+
+The summary gives us the standard deviations of the principal components $u_i^T X$ for $i = 1, ..., 10$. We see that the first principle component explains 86.7% of the variation in the data, while the last few components account for very little, adding up to 1. In this case, instead of ten variables, we could just use a single variable, formed by a linear combination described by the first principal component, which would represent the 10 dimensional data quite well. 
+
+The first column of the rotation matrix, $u_1$, is a linear combination describing the first principal component: 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+round(prfat$rotation, 2)
 #+END_SRC
+
+We see that chest, abdom, and hip dominate the first principal component. This could just be due to the scale of the variable (these tend to be larger measures). Let's try again with some scaling. 
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+fat %>%
+    prcomp(scale. = TRUE) %>>%
+    (~ prfatc) %>>%
+    ("Summary:\n\n" ? summary(.))
+#+END_SRC
+
+We now see a more reasonable distribution across the different body parts for our first principal component, but we also see that the proportion of variance explained by our first principal component drops to 70.21% from 86.7%.
+
+The other PCs describe how the data varies in ways orthogonal to the first PC. For example, the second PC is roughly a contrast between the body center points (neck, chest, etc) vs the extremities (knee, ankle, biceps, forearm). This could be viewed as a relative measure of where the body is carrying its weight. 
+
+Like variances, principal components are sensitive to outliers so it is worth checking. In higher dimensions, outliers can be hard to find. 
+
+*Mahalonobis Distance* is a measure of the distance of a point from the mean that adjusts for the correlation in the data. It is defined as $d_i = \sqrt{(x - \mu)^T \Sigma^{-1}(x - \mu)}$ where $\mu$ is a measure of center and $\Sigma$ is a measure of covariance. Since we are concerned about outliers, it makes sense to use robust measures of center and covariance
+
+#+BEGIN_SRC R :post round-tbl[:colnames yes](*this*)
+get_mahalonobis <- function(data, check_di = TRUE) {
+    data %>%
+        stats::mahalanobis(center = MASS::cov.rob(.)$center,
+                           cov = MASS::cov.rob(.)$cov) -> md
+
+    if (check_di) {
+        tibble(x = qchisq(1:n / (n + 1), p),
+               y = sort(md)) %>%
+            ggplot(aes(x = x,
+                       y = y)) +
+            geom_point() +
+            xlab(latex2exp::TeX("$\\chi^2$ quantiles")) +
+            ylab("Sorted Mahalonobis Distances") +
+            geom_abline(slope = 1, intercept = 0)
+    } else {
+        md
+    }
+}
+#+END_SRC
+
+#+BEGIN_SRC R :file plot.svg :results graphics file
+fat %>%
+    get_mahalonobis() +
+    ggtitle("QQ Plot of Mahalonobis Distances for Body Circumference Data")
+#+END_SRC
+
+#+RESULTS:
+[[file:plot.svg]]
+
+The mahalonobis function returns $d_i^2$. If the data are multivariate with dimension $m$, then we expect $d^2$ to follow a $\chi_m^2$ distribution. We can check this graphically with the plot above. 
+
+We see in the plot above that there are some outliers, and we can investigate the sensitivity of the PCA to these values by re-analyzing the data after removing these points. This will make a substantive difference, especially to the second PC. An alternative to this outlier detection approach is to use robust PCA methods. 
 
